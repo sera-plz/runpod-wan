@@ -113,42 +113,42 @@ VAE_DIR="$NETWORK_VOLUME/ComfyUI/models/vae"
 
 # Download 720p native models
 echo "Downloading 720p native models..."
-aria2c -x16 -s16 -d "$DIFFUSION_MODELS_DIR" -o wan2.1_i2v_720p_14B_fp16.safetensors \
+aria2c -x16 -s16 -d "$DIFFUSION_MODELS_DIR" -o wan2.1_i2v_720p_14B_fp16.safetensors --continue=true \
   https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_i2v_720p_14B_fp16.safetensors
 # download_model "$DIFFUSION_MODELS_DIR" "wan2.1_i2v_480p_14B_bf16.safetensors" \
 #   "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "split_files/diffusion_models/wan2.1_i2v_480p_14B_bf16.safetensors"
 
-aria2c -x16 -s16 -d "$DIFFUSION_MODELS_DIR" -o wan2.1_t2v_14B_fp16.safetensors \
+aria2c -x16 -s16 -d "$DIFFUSION_MODELS_DIR" -o wan2.1_t2v_14B_fp16.safetensors --continue=true \
   https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_t2v_14B_fp16.safetensors
 # download_model "$DIFFUSION_MODELS_DIR" "wan2.1_t2v_14B_bf16.safetensors" \
 #   "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "split_files/diffusion_models/wan2.1_t2v_14B_bf16.safetensors"
 
 # Download text encoders
-aria2c -x16 -s16 -d "$TEXT_ENCODERS_DIR" -o umt5_xxl_fp16.safetensors \
+aria2c -x16 -s16 -d "$TEXT_ENCODERS_DIR" -o umt5_xxl_fp16.safetensors --continue=true \
   https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp16.safetensors
 # download_model "$TEXT_ENCODERS_DIR" "umt5_xxl_fp8_e4m3fn_scaled.safetensors" \
 #   "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"
 
-aria2c -x16 -s16 -d "$TEXT_ENCODERS_DIR" -o open-clip-xlm-roberta-large-vit-huge-14_visual_fp16.safetensors
+aria2c -x16 -s16 -d "$TEXT_ENCODERS_DIR" -o open-clip-xlm-roberta-large-vit-huge-14_visual_fp16.safetensors --continue=true \
   https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/open-clip-xlm-roberta-large-vit-huge-14_visual_fp16.safetensors
 # download_model "$TEXT_ENCODERS_DIR" "open-clip-xlm-roberta-large-vit-huge-14_visual_fp16.safetensors" \
 #   "Kijai/WanVideo_comfy" "open-clip-xlm-roberta-large-vit-huge-14_visual_fp16.safetensors"
 
 # Create CLIP vision directory and download models
 mkdir -p "$CLIP_VISION_DIR"
-aria2c -x16 -s16 -d "$CLIP_VISION_DIR" -o clip_vision_h.safetensors \
+aria2c -x16 -s16 -d "$CLIP_VISION_DIR" -o clip_vision_h.safetensors --continue=true \
   https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors
 # download_model "$CLIP_VISION_DIR" "clip_vision_h.safetensors" \
 #   "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "split_files/clip_vision/clip_vision_h.safetensors"
 
 # Download VAE
 echo "Downloading VAE..."
-aria2c -x16 -s16 -d "$VAE_DIR" -o Wan2_1_VAE_bf16.safetensors \
+aria2c -x16 -s16 -d "$VAE_DIR" -o Wan2_1_VAE_bf16.safetensors --continue=true \
   https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1_VAE_bf16.safetensors
 # download_model "$VAE_DIR" "Wan2_1_VAE_bf16.safetensors" \
 #   "Kijai/WanVideo_comfy" "Wan2_1_VAE_bf16.safetensors"
 
-aria2c -x16 -s16 -d "$VAE_DIR" -o wan_2.1_vae.safetensors \
+aria2c -x16 -s16 -d "$VAE_DIR" -o wan_2.1_vae.safetensors --continue=true \
   https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
 # download_model "$VAE_DIR" "wan_2.1_vae.safetensors" \
 #   "Comfy-Org/Wan_2.1_ComfyUI_repackaged" "split_files/vae/wan_2.1_vae.safetensors"
@@ -171,7 +171,7 @@ fi
 echo "Downloading film network model"
 if [ ! -f "$NETWORK_VOLUME/ComfyUI/models/upscale_models/film_net_fp32.pt" ]; then
   mkdir -p "$NETWORK_VOLUME/ComfyUI/models/upscale_models"
-  aria2c -x16 -s16 -d "$NETWORK_VOLUME/ComfyUI/models/upscale_models" -o film_net_fp32.pt \
+  aria2c -x16 -s16 -d "$NETWORK_VOLUME/ComfyUI/models/upscale_models" -o film_net_fp32.pt --continue=true \
     https://huggingface.co/nguu/film-pytorch/resolve/887b2c42bebcb323baf6c3b6d59304135699b575/film_net_fp32.pt
 fi
 
