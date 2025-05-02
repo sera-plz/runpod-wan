@@ -60,4 +60,5 @@ if [ -f "$FLAG_FILE" ]; then
   fi
 else
   echo "NO FLAG FILE FOUND – manually download the models first!"
+  bash /init.sh
 fi

@@ -12,6 +12,7 @@ git clone https://github.com/atumn/runpod-wan.git
 
 echo "📂 Moving start.sh into place…"
 mv runpod-wan/src/start.sh /
+mv runpod-wan/src/init.sh /
 
 echo "▶️ Running start.sh"
 bash /start.sh
