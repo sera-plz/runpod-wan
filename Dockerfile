@@ -68,25 +68,21 @@ RUN for repo in \
         fi; \
     done
 
-# Ensure torch version is correct at the end by force reinstalling
-RUN pip uninstall -y torch torchvision torchaudio
-RUN pip install torch==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124 --no-deps
-RUN pip install torchvision==0.21.0+cu124 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+# # Ensure torch version is correct at the end by force reinstalling
+# RUN pip uninstall -y torch torchvision torchaudio
+# RUN pip install torch==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124 --no-deps
+# RUN pip install torchvision==0.21.0+cu124 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 
 # Install SageAttention after ensuring the correct torch version
 COPY sageattention-2.1.1-cp310-cp310-linux_x86_64.whl /tmp/
 RUN pip install /tmp/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
 
-# Install jupyterlab AFTER SageAttention to avoid package conflicts
-RUN pip install jupyterlab jupyterlab-lsp jupyter-server jupyter-server-terminals \
-    ipykernel jupyterlab_code_formatter --constraint /torch-constraint.txt
-
 # Verify Python and PyTorch version
 RUN python -c "import sys; print('Python version:', sys.version); import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
 
 COPY src/start_script.sh /start_script.sh
+COPY src/rp_handler.py /rp_handler.py
 RUN chmod +x /start_script.sh
 COPY 4xLSDIR.pth /4xLSDIR.pth
 
-EXPOSE 8888
 CMD ["/start_script.sh"]
