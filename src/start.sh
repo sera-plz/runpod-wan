@@ -1,17 +1,5 @@
 #!/usr/bin/env bash
 
-echo "== System Information =="
-python --version
-pip --version
-echo "PyTorch version: $(python -c 'import torch; print(torch.__version__)')"
-echo "CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())')"
-echo "Python executable path: $(which python)"
-echo "Checking SageAttention installation..."
-python -c "import sageattention; print('SageAttention imported successfully')"
-echo "== End System Information =="
-
-# Set the network volume path
-# Determine the network volume based on environment
 # Check if /workspace exists
 if [ -d "/workspace" ]; then  
   echo "Starting ComfyUI API"
