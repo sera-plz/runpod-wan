@@ -65,9 +65,13 @@ pip install -r requirements.txt
 ```
 2. Install the Serverless dependencies:
 ```bash
-pip install runpod
+pip install requests runpod==1.7.9
 pip install onnxruntime-gpu
 pip install triton
+
+# Install SageAttention after ensuring the correct torch version
+wget -O https://github.com/atumn/runpod-wan/raw/refs/heads/main/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
+RUN pip install /tmp/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
 ```
 3. Download models:
 ```bash

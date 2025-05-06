@@ -7,6 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
    PYTHONUNBUFFERED=1 \
    CMAKE_BUILD_PARALLEL_LEVEL=8
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 WORKDIR /
 
 # Install Python 3.10 specifically and make it the default
@@ -23,19 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Verify Python version
 RUN python --version && pip --version
-
-# Install other packages with the constraint
-RUN pip install requests runpod==1.7.9
-
-RUN pip uninstall -y opencv-contrib-python opencv-contrib-python-headless opencv-python opencv-python-headless || true \
-  && pip install opencv-contrib-python-headless scikit-image diffusers accelerate imageio-ffmpeg color-matcher segment_anything piexif ultralytics ftfy dill
-
-# Install SageAttention after ensuring the correct torch version
-COPY sageattention-2.1.1-cp310-cp310-linux_x86_64.whl /tmp/
-RUN pip install /tmp/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
-
-# Verify Python and PyTorch version
-RUN python -c "import sys; print('Python version:', sys.version); import torch; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
 
 COPY src/start.sh /start.sh
 COPY src/rp_handler.py /rp_handler.py
