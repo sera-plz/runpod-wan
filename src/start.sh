@@ -9,8 +9,8 @@ if [ -d "/workspace" ]; then
   export LD_PRELOAD="${TCMALLOC}"
   export PYTHONUNBUFFERED=true
   export HF_HOME="/workspace"
-  cd /workspace/ComfyUI
-  python main.py --port 3000 > /workspace/logs/comfyui.log 2>&1 &
+  cd /workspace/comfywan
+  python main.py --port 3000 --listen > /workspace/logs/comfyui.log 2>&1 &
   deactivate
 
   echo "Starting RunPod Handler"

@@ -1,5 +1,5 @@
 # Use multi-stage build with caching optimizations
-FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.1-devel-ubuntu22.04
 
 # Consolidated environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
