@@ -62,6 +62,10 @@ pip install -r requirements.txt
 git clone https://github.com/kijai/ComfyUI-KJNodes.git custom_nodes/ComfyUI-KJNodes
 cd custom_nodes/ComfyUI-KJNodes
 pip install -r requirements.txt
+
+git clone https://github.com/welltop-cn/ComfyUI-TeaCache.git custom_nodes/ComfyUI-TeaCache
+cd custom_nodes/ComfyUI-TeaCache
+pip install -r requirements.txt
 ```
 2. Install the Serverless dependencies:
 ```bash
@@ -70,35 +74,38 @@ pip install onnxruntime-gpu
 pip install triton
 
 # Install SageAttention after ensuring the correct torch version
-wget -O https://github.com/atumn/runpod-wan/raw/refs/heads/main/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
-RUN pip install /tmp/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
+# wget -O https://github.com/atumn/runpod-wan/raw/refs/heads/main/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
+# RUN pip install /tmp/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
+git clone https://github.com/thu-ml/SageAttention.git
+cd SageAttention 
+python setup.py install  # or pip install -e .
+
 ```
 3. Download models:
 ```bash
-# Download 720p native models
-aria2c -x16 -s16 -d /workspace/comfywan/models/diffusion_models -o wan2.1_i2v_720p_14B_fp16.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_i2v_720p_14B_fp16.safetensors
+# Download GGUF model
+aria2c -x16 -s16 -d /workspace/comfywan/models/diffusion_models -o Wan2.1-VACE-14B-Q6_K.gguf --continue=true https://huggingface.co/QuantStack/Wan2.1-VACE-14B-GGUF/resolve/main/Wan2.1-VACE-14B-Q6_K.gguf
 
-# aria2c -x16 -s16 -d /workspace/comfywan/models/diffusion_models -o wan2.1_t2v_14B_fp16.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/diffusion_models/wan2.1_t2v_14B_fp16.safetensors
-
-aria2c -x16 -s16 -d /workspace/comfywan/models/diffusion_models -o Wan2_1-T2V-14B_CausVid_fp8_e4m3fn.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1-T2V-14B_CausVid_fp8_e4m3fn.safetensors
-
-# Download text encoders
-aria2c -x16 -s16 -d /workspace/comfywan/models/text_encoders -o umt5_xxl_fp16.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp16.safetensors
-
-aria2c -x16 -s16 -d /workspace/comfywan/models/text_encoders -o umt5-xxl-enc-bf16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/umt5-xxl-enc-bf16.safetensors
-
-aria2c -x16 -s16 -d /workspace/comfywan/models/text_encoders -o open-clip-xlm-roberta-large-vit-huge-14_visual_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/open-clip-xlm-roberta-large-vit-huge-14_visual_fp16.safetensors
+# Download text encoders also GGUF
+aria2c -x16 -s16 -d /workspace/comfywan/models/text_encoders -o umt5-xxl-encoder-Q8_0.gguf --continue=true https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q8_0.gguf
 
 # Create CLIP vision directory and download models
 aria2c -x16 -s16 -d /workspace/comfywan/models/clip_vision -o clip_vision_h.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors
 
 # Download VAE
-aria2c -x16 -s16 -d /workspace/comfywan/models/vae -o Wan2_1_VAE_bf16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan2_1_VAE_bf16.safetensors
-
 aria2c -x16 -s16 -d /workspace/comfywan/models/vae -o wan_2.1_vae.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
 
 # CausVid Lora
 aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Wan21_CausVid_14B_T2V_lora_rank32.safetensors --continue=true https://civitai.com/api/download/models/1794316?type=Model&format=SafeTensor
+
+aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors
+
+# cinematic zoom
+aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Su_MCraft_Ep60.safetensors --continue=true "https://civitai.com/api/download/models/1599906?type=Model&format=SafeTensor&token=${token}"
+# trigger words:
+# cinematic camera pan
+# cinematic camera zoom in
+# cinematic camera zoom out
 
 # Download upscaler
 aria2c -x16 -s16 -d /workspace/comfywan/models/upscale_models -o 4xLSDIR.pth --continue=true https://github.com/Phhofm/models/raw/main/4xLSDIR/4xLSDIR.pth
