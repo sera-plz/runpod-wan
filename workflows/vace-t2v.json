@@ -1,8 +1,8 @@
 {
   "3": {
     "inputs": {
-      "seed": 37623286003824,
-      "steps": 6,
+      "seed": 9161294164723,
+      "steps": 4,
       "cfg": 1,
       "sampler_name": "uni_pc",
       "scheduler": "simple",
@@ -31,7 +31,7 @@
   },
   "6": {
     "inputs": {
-      "text": "Create a candid image inside a cozy cafe with warm and soft light. A beautiful woman is sitting and should be seen enjoying a coffee with gentle sunlight and drinking through the window they are sitting near. \n\n",
+      "text": "Create a candid image inside a cozy cafe with warm and soft light. A beautiful woman is sitting and should be seen enjoying a coffee with gentle sunlight and drinking through the window they are sitting near. \\n\\n",
       "clip": [
         "106",
         1
@@ -44,7 +44,7 @@
   },
   "7": {
     "inputs": {
-      "text": "bad quality, blurry, messy, chaotic",
+      "text": "过曝，静态，细节模糊不清，字幕，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, walking backwards, blurry, unfinished",
       "clip": [
         "106",
         1
@@ -149,7 +149,7 @@
   },
   "69": {
     "inputs": {
-      "filename_prefix": "video/ComfyUI",
+      "filename_prefix": "video/t2v",
       "format": "auto",
       "codec": "auto",
       "video-preview": "",
@@ -185,11 +185,36 @@
       "lora_2": {
         "on": true,
         "lora": "Wan21_CausVid_14B_T2V_lora_rank32.safetensors",
-        "strength": 0.3
+        "strength": 0.5
+      },
+      "lora_3": {
+        "on": false,
+        "lora": "Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors",
+        "strength": 0.5
+      },
+      "lora_4": {
+        "on": true,
+        "lora": "Wan2.1-Fun-14B-InP-MPS.safetensors",
+        "strength": 1
+      },
+      "lora_5": {
+        "on": false,
+        "lora": "Su_MCraft_Ep60.safetensors",
+        "strength": 1
+      },
+      "lora_6": {
+        "on": false,
+        "lora": "deepthroat_epoch_80.safetensors",
+        "strength": 1
+      },
+      "lora_7": {
+        "on": false,
+        "lora": "wan_pov_missionary_i2v_v1.1.safetensors",
+        "strength": 1
       },
       "➕ Add Lora": "",
       "model": [
-        "105",
+        "111",
         0
       ],
       "clip": [
@@ -210,6 +235,32 @@
     "class_type": "CLIPLoaderGGUF",
     "_meta": {
       "title": "CLIPLoader (GGUF)"
+    }
+  },
+  "109": {
+    "inputs": {
+      "sage_attention": "auto",
+      "model": [
+        "105",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
+    }
+  },
+  "111": {
+    "inputs": {
+      "enable_fp16_accumulation": true,
+      "model": [
+        "109",
+        0
+      ]
+    },
+    "class_type": "ModelPatchTorchSettings",
+    "_meta": {
+      "title": "Model Patch Torch Settings"
     }
   }
 }
