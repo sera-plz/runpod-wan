@@ -26,8 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Verify Python version
 RUN python --version && pip --version
 
-COPY src/start.sh /start.sh
-COPY src/rp_handler.py /rp_handler.py
+COPY start.sh /start.sh
+COPY rp_handler.py /rp_handler.py
 COPY workflows /workflows
 RUN chmod +x /start.sh
 ENTRYPOINT /start.sh
