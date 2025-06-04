@@ -5,27 +5,9 @@
 3. Attach the Network Volume to a Secure Cloud [GPU pod](https://www.runpod.io/console/gpu-secure-cloud).
 4. Select the RunPod Pytorch 2 template.
 5. Deploy the GPU Cloud pod.
-6. Once the pod is up, open a Terminal and install the required
-   dependencies. This can either be done by using the installation
-   script, or manually.
+6. Once the pod is up, open a Terminal and install the required dependencies.
 
-## Automatic Installation Script
-
-You can run this automatic installation script which will
-automatically install all of the dependencies that get installed
-manually below, and then you don't need to follow any of the
-manual instructions.
-
-```bash
-wget https://raw.githubusercontent.com/ashleykleynhans/runpod-worker-comfyui/main/scripts/install.sh
-chmod +x install.sh
-./install.sh
-```
-
-## Manual Installation
-
-You only need to complete the steps below if you did not run the
-automatic installation script above.
+## Installation
 
 1. Install the ComfyUI:
 ```bash
