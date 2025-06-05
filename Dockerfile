@@ -13,8 +13,8 @@ WORKDIR /
 
 # Install Python 3.10 specifically and make it the default
 RUN apt-get update && apt-get install -y --no-install-recommends \
-   python3.10 python3.10-dev python3.10-distutils python3-pip curl ffmpeg ninja-build \
-   git git-lfs wget aria2 vim libgl1 libglib2.0-0 build-essential gcc \
+   python3.10 python3.10-dev python3.10-distutils python3-pip python3.10-venv \
+   curl ffmpeg ninja-build git git-lfs wget aria2 vim libgl1 libglib2.0-0 build-essential gcc \
    && ln -sf /usr/bin/python3.10 /usr/bin/python \
    && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10 \
@@ -26,8 +26,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Verify Python version
 RUN python --version && pip --version
 
-COPY start.sh /start.sh
-COPY rp_handler.py /rp_handler.py
+# install runpod and requests for python
+RUN pip install runpod requests websocket-client
+
+# Add RunPod Handler and Docker container start script
+COPY start.sh rp_handler.py ./
+# Add validation schemas
+COPY schemas /schemas
+# Add workflows
 COPY workflows /workflows
+
 RUN chmod +x /start.sh
 ENTRYPOINT /start.sh
