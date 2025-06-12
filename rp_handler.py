@@ -15,9 +15,9 @@ import socket
 import traceback
 
 # Time to wait between API check attempts in milliseconds
-COMFY_API_AVAILABLE_INTERVAL_MS = 500
+COMFY_API_AVAILABLE_INTERVAL_MS = 1000
 # Maximum number of API check attempts
-COMFY_API_AVAILABLE_MAX_RETRIES = 240
+COMFY_API_AVAILABLE_MAX_RETRIES = 180
 # Websocket reconnection behaviour (can be overridden through environment variables)
 # NOTE: more attempts and diagnostics improve debuggability whenever ComfyUI crashes mid-job.
 #   • WEBSOCKET_RECONNECT_ATTEMPTS sets how many times we will try to reconnect.
@@ -481,7 +481,7 @@ def get_image_data(filename, subfolder, image_type):
 def callback_api(payload):
     if CALLBACK_API_ENDPOINT != "":
         try:
-            headers = {"Authorization": f"Bearer {CALLBACK_API_SECRET}"}
+            headers = {"X-API-Key": f"{CALLBACK_API_SECRET}"}
             response = requests.post(
                 CALLBACK_API_ENDPOINT,
                 json=payload,
@@ -561,6 +561,7 @@ def handler(job):
                     f"Missing 'prompt_id' in queue response: {queued_workflow}"
                 )
             print(f"worker-comfyui - Queued workflow with ID: {prompt_id}")
+            callback_api({"action": "in_queue", "prompt_id": prompt_id})
         except requests.RequestException as e:
             print(f"worker-comfyui - Error queuing workflow: {e}")
             raise ValueError(f"Error queuing workflow: {e}")

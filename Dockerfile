@@ -31,10 +31,6 @@ RUN pip install runpod requests websocket-client
 
 # Add RunPod Handler and Docker container start script
 COPY start.sh rp_handler.py ./
-# Add validation schemas
-COPY schemas /schemas
-# Add workflows
-COPY workflows /workflows
 
 COPY comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
 RUN chmod +x /usr/local/bin/comfy-manager-set-mode
