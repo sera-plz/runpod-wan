@@ -13,6 +13,11 @@ docker build --platform linux/amd64 --tag atumn/runpod-wan:${tag} .
 docker push atumn/runpod-wan:${tag}
 ```
 
+for downloading files from output dir using `scp` or `noglob scp` if on mac:
+```
+scp -i ~/.ssh/id_ed25519 -P 22157 root@194.68.245.14:/workspace/comfywan/output/* ~/dev/ttt
+```
+
 # in case if you're running from pod, make sure to configure python to use python3.10
 ```bash
 apt-get update && apt-get install -y --no-install-recommends \

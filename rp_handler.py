@@ -1,706 +1,838 @@
-import os
-import shutil
-import time
-import requests
-import traceback
-import json
-import base64
-import uuid
-import logging
-import logging.handlers
 import runpod
-from runpod.serverless.utils.rp_validator import validate
-from runpod.serverless.modules.rp_logger import RunPodLogger
-from requests.adapters import HTTPAdapter, Retry
-from schemas.input import INPUT_SCHEMA
+from runpod.serverless.utils import rp_upload
+import json
+import urllib.request
+import urllib.parse
+import time
+import os
+import requests
+import base64
+from io import BytesIO
+import websocket
+import uuid
+import tempfile
+import socket
+import traceback
+
+# Time to wait between API check attempts in milliseconds
+COMFY_API_AVAILABLE_INTERVAL_MS = 500
+# Maximum number of API check attempts
+COMFY_API_AVAILABLE_MAX_RETRIES = 240
+# Websocket reconnection behaviour (can be overridden through environment variables)
+# NOTE: more attempts and diagnostics improve debuggability whenever ComfyUI crashes mid-job.
+#   • WEBSOCKET_RECONNECT_ATTEMPTS sets how many times we will try to reconnect.
+#   • WEBSOCKET_RECONNECT_DELAY_S sets the sleep in seconds between attempts.
+#
+# If the respective env-vars are not supplied we fall back to sensible defaults ("5" and "3").
+WEBSOCKET_RECONNECT_ATTEMPTS = int(os.environ.get("WEBSOCKET_RECONNECT_ATTEMPTS", 10))
+WEBSOCKET_RECONNECT_DELAY_S = int(os.environ.get("WEBSOCKET_RECONNECT_DELAY_S", 3))
+
+CALLBACK_API_ENDPOINT = os.environ.get("CALLBACK_API_ENDPOINT", "")
+CALLBACK_API_SECRET = os.environ.get("CALLBACK_API_SECRET", "")
+
+# Extra verbose websocket trace logs (set WEBSOCKET_TRACE=true to enable)
+if os.environ.get("WEBSOCKET_TRACE", "false").lower() == "true":
+    # This prints low-level frame information to stdout which is invaluable for diagnosing
+    # protocol errors but can be noisy in production – therefore gated behind an env-var.
+    websocket.enableTrace(True)
+
+# Host where ComfyUI is running
+COMFY_HOST = "127.0.0.1:3000"
+# Enforce a clean state after each job is done
+# see https://docs.runpod.io/docs/handler-additional-controls#refresh-worker
+REFRESH_WORKER = os.environ.get("REFRESH_WORKER", "false").lower() == "true"
+
+# ---------------------------------------------------------------------------
+# Helper: quick reachability probe of ComfyUI HTTP endpoint (port 8188)
+# ---------------------------------------------------------------------------
 
 
-APP_NAME = 'runpod-worker-comfyui'
-BASE_URI = 'http://127.0.0.1:3000'
-VOLUME_MOUNT_PATH = '/workspace'
-LOG_FILE = 'comfywan.log'
-TIMEOUT = 600
-LOG_LEVEL = 'INFO'
-DISK_MIN_FREE_BYTES = 500 * 1024 * 1024  # 500MB in bytes
+def _comfy_server_status():
+    """Return a dictionary with basic reachability info for the ComfyUI HTTP server."""
+    try:
+        resp = requests.get(f"http://{COMFY_HOST}/", timeout=5)
+        return {
+            "reachable": resp.status_code == 200,
+            "status_code": resp.status_code,
+        }
+    except Exception as exc:
+        return {"reachable": False, "error": str(exc)}
 
 
-# ---------------------------------------------------------------------------- #
-#                               Custom Log Handler                             #
-# ---------------------------------------------------------------------------- #
-class SnapLogHandler(logging.Handler):
-    def __init__(self, app_name: str):
-        super().__init__()
-        self.app_name = app_name
-        self.rp_logger = RunPodLogger()
-        self.rp_logger.set_level(LOG_LEVEL)
-        self.runpod_endpoint_id = os.getenv('RUNPOD_ENDPOINT_ID')
-        self.runpod_cpu_count = os.getenv('RUNPOD_CPU_COUNT')
-        self.runpod_pod_id = os.getenv('RUNPOD_POD_ID')
-        self.runpod_gpu_size = os.getenv('RUNPOD_GPU_SIZE')
-        self.runpod_mem_gb = os.getenv('RUNPOD_MEM_GB')
-        self.runpod_gpu_count = os.getenv('RUNPOD_GPU_COUNT')
-        self.runpod_volume_id = os.getenv('RUNPOD_VOLUME_ID')
-        self.runpod_pod_hostname = os.getenv('RUNPOD_POD_HOSTNAME')
-        self.runpod_debug_level = os.getenv('RUNPOD_DEBUG_LEVEL')
-        self.runpod_dc_id = os.getenv('RUNPOD_DC_ID')
-        self.runpod_gpu_name = os.getenv('RUNPOD_GPU_NAME')
-        self.log_api_endpoint = os.getenv('LOG_API_ENDPOINT')
-        self.log_api_timeout = os.getenv('LOG_API_TIMEOUT', 5)
-        self.log_api_timeout = int(self.log_api_timeout)
-        self.log_token = os.getenv('LOG_API_TOKEN')
+def _attempt_websocket_reconnect(ws_url, max_attempts, delay_s, initial_error):
+    """
+    Attempts to reconnect to the WebSocket server after a disconnect.
 
-    def emit(self, record):
-        runpod_job_id = os.getenv('RUNPOD_JOB_ID')
+    Args:
+        ws_url (str): The WebSocket URL (including client_id).
+        max_attempts (int): Maximum number of reconnection attempts.
+        delay_s (int): Delay in seconds between attempts.
+        initial_error (Exception): The error that triggered the reconnect attempt.
 
+    Returns:
+        websocket.WebSocket: The newly connected WebSocket object.
+
+    Raises:
+        websocket.WebSocketConnectionClosedException: If reconnection fails after all attempts.
+    """
+    print(
+        f"worker-comfyui - Websocket connection closed unexpectedly: {initial_error}. Attempting to reconnect..."
+    )
+    last_reconnect_error = initial_error
+    for attempt in range(max_attempts):
+        # Log current server status before each reconnect attempt so that we can
+        # see whether ComfyUI is still alive (HTTP port 8188 responding) even if
+        # the websocket dropped. This is extremely useful to differentiate
+        # between a network glitch and an outright ComfyUI crash/OOM-kill.
+        srv_status = _comfy_server_status()
+        if not srv_status["reachable"]:
+            # If ComfyUI itself is down there is no point in retrying the websocket –
+            # bail out immediately so the caller gets a clear "ComfyUI crashed" error.
+            print(
+                f"worker-comfyui - ComfyUI HTTP unreachable – aborting websocket reconnect: {srv_status.get('error', 'status '+str(srv_status.get('status_code')))}"
+            )
+            raise websocket.WebSocketConnectionClosedException(
+                "ComfyUI HTTP unreachable during websocket reconnect"
+            )
+
+        # Otherwise we proceed with reconnect attempts while server is up
+        print(
+            f"worker-comfyui - Reconnect attempt {attempt + 1}/{max_attempts}... (ComfyUI HTTP reachable, status {srv_status.get('status_code')})"
+        )
         try:
-            # Handle string formatting and extra arguments
-            if hasattr(record, 'msg') and hasattr(record, 'args'):
-                if record.args:
-                    try:
-                        # Try to format the message with args
-                        if isinstance(record.args, dict):
-                            message = record.msg % record.args if '%' in str(record.msg) else str(record.msg)
-                        else:
-                            message = str(record.msg) % record.args if '%' in str(record.msg) else str(record.msg)
-                    except (TypeError, ValueError):
-                        # If formatting fails, just use the message as-is
-                        message = str(record.msg)
-                else:
-                    message = str(record.msg)
+            # Need to create a new socket object for reconnect
+            new_ws = websocket.WebSocket()
+            new_ws.connect(ws_url, timeout=10)  # Use existing ws_url
+            print(f"worker-comfyui - Websocket reconnected successfully.")
+            return new_ws  # Return the new connected socket
+        except (
+            websocket.WebSocketException,
+            ConnectionRefusedError,
+            socket.timeout,
+            OSError,
+        ) as reconn_err:
+            last_reconnect_error = reconn_err
+            print(
+                f"worker-comfyui - Reconnect attempt {attempt + 1} failed: {reconn_err}"
+            )
+            if attempt < max_attempts - 1:
+                print(
+                    f"worker-comfyui - Waiting {delay_s} seconds before next attempt..."
+                )
+                time.sleep(delay_s)
             else:
-                message = str(record)
+                print(f"worker-comfyui - Max reconnection attempts reached.")
 
-            # Only log to RunPod logger if the length of the log entry is >= 1000 characters
-            if len(message) <= 1000:
-                level_mapping = {
-                    logging.DEBUG: self.rp_logger.debug,
-                    logging.INFO: self.rp_logger.info,
-                    logging.WARNING: self.rp_logger.warn,
-                    logging.ERROR: self.rp_logger.error,
-                    logging.CRITICAL: self.rp_logger.error
-                }
+    # If loop completes without returning, raise an exception
+    print("worker-comfyui - Failed to reconnect websocket after connection closed.")
+    raise websocket.WebSocketConnectionClosedException(
+        f"Connection closed and failed to reconnect. Last error: {last_reconnect_error}"
+    )
 
-                # Wrapper to invoke RunPodLogger logging
-                rp_logger = level_mapping.get(record.levelno, self.rp_logger.info)
 
-                if runpod_job_id:
-                    rp_logger(message, runpod_job_id)
-                else:
-                    rp_logger(message)
+def validate_input(job_input):
+    """
+    Validates the input for the handler function.
 
-            if self.log_api_endpoint:
-                try:
-                    headers = {'Authorization': f'Bearer {self.log_token}'}
+    Args:
+        job_input (dict): The input data to validate.
 
-                    log_payload = {
-                        'app_name': self.app_name,
-                        'log_asctime': self.formatter.formatTime(record),
-                        'log_levelname': record.levelname,
-                        'log_message': message,
-                        'runpod_endpoint_id': self.runpod_endpoint_id,
-                        'runpod_cpu_count': self.runpod_cpu_count,
-                        'runpod_pod_id': self.runpod_pod_id,
-                        'runpod_gpu_size': self.runpod_gpu_size,
-                        'runpod_mem_gb': self.runpod_mem_gb,
-                        'runpod_gpu_count': self.runpod_gpu_count,
-                        'runpod_volume_id': self.runpod_volume_id,
-                        'runpod_pod_hostname': self.runpod_pod_hostname,
-                        'runpod_debug_level': self.runpod_debug_level,
-                        'runpod_dc_id': self.runpod_dc_id,
-                        'runpod_gpu_name': self.runpod_gpu_name,
-                        'runpod_job_id': runpod_job_id
-                    }
+    Returns:
+        tuple: A tuple containing the validated data and an error message, if any.
+               The structure is (validated_data, error_message).
+    """
+    # Validate if job_input is provided
+    if job_input is None:
+        return None, "Please provide input"
 
-                    response = requests.post(
-                        self.log_api_endpoint,
-                        json=log_payload,
-                        headers=headers,
-                        timeout=self.log_api_timeout
+    # Check if input is a string and try to parse it as JSON
+    if isinstance(job_input, str):
+        try:
+            job_input = json.loads(job_input)
+        except json.JSONDecodeError:
+            return None, "Invalid JSON format in input"
+
+    # Validate 'workflow' in input
+    workflow = job_input.get("workflow")
+    if workflow is None:
+        return None, "Missing 'workflow' parameter"
+
+    # Validate 'images' in input, if provided
+    images = job_input.get("images")
+    if images is not None:
+        if not isinstance(images, list) or not all(
+            "name" in image and "image" in image for image in images
+        ):
+            return (
+                None,
+                "'images' must be a list of objects with 'name' and 'image' keys",
+            )
+
+    # Return validated data and no error
+    return {"workflow": workflow, "images": images}, None
+
+
+def check_server(url, retries=500, delay=50):
+    """
+    Check if a server is reachable via HTTP GET request
+
+    Args:
+    - url (str): The URL to check
+    - retries (int, optional): The number of times to attempt connecting to the server. Default is 50
+    - delay (int, optional): The time in milliseconds to wait between retries. Default is 500
+
+    Returns:
+    bool: True if the server is reachable within the given number of retries, otherwise False
+    """
+
+    print(f"worker-comfyui - Checking API server at {url}...")
+    for i in range(retries):
+        try:
+            response = requests.get(url, timeout=5)
+
+            # If the response status code is 200, the server is up and running
+            if response.status_code == 200:
+                print(f"worker-comfyui - API is reachable")
+                return True
+        except requests.Timeout:
+            pass
+        except requests.RequestException as e:
+            pass
+
+        # Wait for the specified delay before retrying
+        time.sleep(delay / 1000)
+
+    print(
+        f"worker-comfyui - Failed to connect to server at {url} after {retries} attempts."
+    )
+    return False
+
+
+def upload_images(images):
+    """
+    Upload a list of base64 encoded images to the ComfyUI server using the /upload/image endpoint.
+
+    Args:
+        images (list): A list of dictionaries, each containing the 'name' of the image and the 'image' as a base64 encoded string.
+
+    Returns:
+        dict: A dictionary indicating success or error.
+    """
+    if not images:
+        return {"status": "success", "message": "No images to upload", "details": []}
+
+    responses = []
+    upload_errors = []
+
+    print(f"worker-comfyui - Uploading {len(images)} image(s)...")
+
+    for image in images:
+        try:
+            name = image["name"]
+            image_data_uri = image["image"]  # Get the full string (might have prefix)
+
+            # --- Strip Data URI prefix if present ---
+            if "," in image_data_uri:
+                # Find the comma and take everything after it
+                base64_data = image_data_uri.split(",", 1)[1]
+            else:
+                # Assume it's already pure base64
+                base64_data = image_data_uri
+            # --- End strip ---
+
+            blob = base64.b64decode(base64_data)  # Decode the cleaned data
+
+            # Prepare the form data
+            files = {
+                "image": (name, BytesIO(blob), "image/png"),
+                "overwrite": (None, "true"),
+            }
+
+            # POST request to upload the image
+            response = requests.post(
+                f"http://{COMFY_HOST}/upload/image", files=files, timeout=30
+            )
+            response.raise_for_status()
+
+            responses.append(f"Successfully uploaded {name}")
+            print(f"worker-comfyui - Successfully uploaded {name}")
+
+        except base64.binascii.Error as e:
+            error_msg = f"Error decoding base64 for {image.get('name', 'unknown')}: {e}"
+            print(f"worker-comfyui - {error_msg}")
+            upload_errors.append(error_msg)
+        except requests.Timeout:
+            error_msg = f"Timeout uploading {image.get('name', 'unknown')}"
+            print(f"worker-comfyui - {error_msg}")
+            upload_errors.append(error_msg)
+        except requests.RequestException as e:
+            error_msg = f"Error uploading {image.get('name', 'unknown')}: {e}"
+            print(f"worker-comfyui - {error_msg}")
+            upload_errors.append(error_msg)
+        except Exception as e:
+            error_msg = (
+                f"Unexpected error uploading {image.get('name', 'unknown')}: {e}"
+            )
+            print(f"worker-comfyui - {error_msg}")
+            upload_errors.append(error_msg)
+
+    if upload_errors:
+        print(f"worker-comfyui - image(s) upload finished with errors")
+        return {
+            "status": "error",
+            "message": "Some images failed to upload",
+            "details": upload_errors,
+        }
+
+    print(f"worker-comfyui - image(s) upload complete")
+    return {
+        "status": "success",
+        "message": "All images uploaded successfully",
+        "details": responses,
+    }
+
+
+def get_available_models():
+    """
+    Get list of available models from ComfyUI
+
+    Returns:
+        dict: Dictionary containing available models by type
+    """
+    try:
+        response = requests.get(f"http://{COMFY_HOST}/object_info", timeout=10)
+        response.raise_for_status()
+        object_info = response.json()
+
+        # Extract available checkpoints from CheckpointLoaderSimple
+        available_models = {}
+        if "CheckpointLoaderSimple" in object_info:
+            checkpoint_info = object_info["CheckpointLoaderSimple"]
+            if "input" in checkpoint_info and "required" in checkpoint_info["input"]:
+                ckpt_options = checkpoint_info["input"]["required"].get("ckpt_name")
+                if ckpt_options and len(ckpt_options) > 0:
+                    available_models["checkpoints"] = (
+                        ckpt_options[0] if isinstance(ckpt_options[0], list) else []
                     )
 
-                    if response.status_code != 200:
-                        self.rp_logger.error(f'Failed to send log to API. Status code: {response.status_code}')
-                except requests.Timeout:
-                    self.rp_logger.error(f'Timeout error sending log to API (timeout={self.log_api_timeout}s)')
-                except Exception as e:
-                    self.rp_logger.error(f'Error sending log to API: {str(e)}')
-            else:
-                self.rp_logger.warn('LOG_API_ENDPOINT environment variable is not set, not logging to API')
-        except Exception as e:
-            # Add error handling for message formatting
-            self.rp_logger.error(f'Error in log formatting: {str(e)}')
-
-
-# ---------------------------------------------------------------------------- #
-#                               ComfyUI Functions                              #
-# ---------------------------------------------------------------------------- #
-def wait_for_service(url):
-    retries = 0
-
-    while True:
-        try:
-            requests.get(url)
-            return
-        except requests.exceptions.RequestException:
-            retries += 1
-
-            # Only log every 15 retries so the logs don't get spammed
-            if retries % 15 == 0:
-                logging.info('Service not ready yet. Retrying...')
-        except Exception as err:
-            logging.error(f'Error: {err}')
-
-        time.sleep(0.2)
-
-
-def send_get_request(endpoint):
-    return session.get(
-        url=f'{BASE_URI}/{endpoint}',
-        timeout=TIMEOUT
-    )
-
-
-def send_post_request(endpoint, payload):
-    return session.post(
-        url=f'{BASE_URI}/{endpoint}',
-        json=payload,
-        timeout=TIMEOUT
-    )
-
-
-def get_txt2img_payload(workflow, payload):
-    workflow["3"]["inputs"]["seed"] = payload["seed"]
-    workflow["3"]["inputs"]["steps"] = payload["steps"]
-    workflow["3"]["inputs"]["cfg"] = payload["cfg_scale"]
-    workflow["3"]["inputs"]["sampler_name"] = payload["sampler_name"]
-    workflow["4"]["inputs"]["ckpt_name"] = payload["ckpt_name"]
-    workflow["5"]["inputs"]["batch_size"] = payload["batch_size"]
-    workflow["5"]["inputs"]["width"] = payload["width"]
-    workflow["5"]["inputs"]["height"] = payload["height"]
-    workflow["6"]["inputs"]["text"] = payload["prompt"]
-    workflow["7"]["inputs"]["text"] = payload["negative_prompt"]
-    return workflow
-
-
-def get_img2img_payload(workflow, payload):
-    workflow["13"]["inputs"]["seed"] = payload["seed"]
-    workflow["13"]["inputs"]["steps"] = payload["steps"]
-    workflow["13"]["inputs"]["cfg"] = payload["cfg_scale"]
-    workflow["13"]["inputs"]["sampler_name"] = payload["sampler_name"]
-    workflow["13"]["inputs"]["scheduler"] = payload["scheduler"]
-    workflow["13"]["inputs"]["denoise"] = payload["denoise"]
-    workflow["1"]["inputs"]["ckpt_name"] = payload["ckpt_name"]
-    workflow["2"]["inputs"]["width"] = payload["width"]
-    workflow["2"]["inputs"]["height"] = payload["height"]
-    workflow["2"]["inputs"]["target_width"] = payload["width"]
-    workflow["2"]["inputs"]["target_height"] = payload["height"]
-    workflow["4"]["inputs"]["width"] = payload["width"]
-    workflow["4"]["inputs"]["height"] = payload["height"]
-    workflow["4"]["inputs"]["target_width"] = payload["width"]
-    workflow["4"]["inputs"]["target_height"] = payload["height"]
-    workflow["6"]["inputs"]["text"] = payload["prompt"]
-    workflow["7"]["inputs"]["text"] = payload["negative_prompt"]
-    return workflow
-
-
-def get_workflow_payload(workflow_name, payload):
-    with open(f'/workflows/{workflow_name}.json', 'r') as json_file:
-        workflow = json.load(json_file)
-
-    if workflow_name == 'txt2img':
-        workflow = get_txt2img_payload(workflow, payload)
-
-    return workflow
-
-
-def get_output_images(output):
-    """
-    Get the output images
-    """
-    images = []
-
-    for key, value in output.items():
-        if 'images' in value and isinstance(value['images'], list):
-            images.append(value['images'][0])
-
-    return images
-
-
-
-def create_unique_filename_prefix(payload):
-    """
-    Create a unique filename prefix for each request to avoid a race condition where
-    more than one request completes at the same time, which can either result in the
-    incorrect output being returned, or the output image not being found.
-    """
-    for key, value in payload.items():
-        class_type = value.get('class_type')
-
-        if class_type == 'SaveImage':
-            payload[key]['inputs']['filename_prefix'] = str(uuid.uuid4())
-
-
-# ---------------------------------------------------------------------------- #
-#                              Telemetry functions                             #
-# ---------------------------------------------------------------------------- #
-def get_container_memory_info(job_id=None):
-    """
-    Get memory information that's actually allocated to the container using cgroups.
-    Returns a dictionary with memory stats in GB.
-    Also logs the memory information directly.
-    """
-    try:
-        mem_info = {}
-
-        # First try to get host memory information as fallback
-        try:
-            with open('/proc/meminfo', 'r') as f:
-                meminfo = f.readlines()
-
-            for line in meminfo:
-                if 'MemTotal:' in line:
-                    mem_info['total'] = int(line.split()[1]) / (1024 * 1024)  # Convert from KB to GB
-                elif 'MemAvailable:' in line:
-                    mem_info['available'] = int(line.split()[1]) / (1024 * 1024)  # Convert from KB to GB
-                elif 'MemFree:' in line:
-                    mem_info['free'] = int(line.split()[1]) / (1024 * 1024)  # Convert from KB to GB
-
-            # Calculate used memory (may be overridden by container-specific value below)
-            if 'total' in mem_info and 'free' in mem_info:
-                mem_info['used'] = mem_info['total'] - mem_info['free']
-        except Exception as e:
-            logging.warning(f"Failed to read host memory info: {str(e)}", job_id)
-
-        # Try cgroups v2 path first (modern Docker)
-        try:
-            with open('/sys/fs/cgroup/memory.max', 'r') as f:
-                max_mem = f.read().strip()
-                if max_mem != 'max':  # If set to 'max', it means unlimited
-                    mem_info['limit'] = int(max_mem) / (1024 * 1024 * 1024)  # Convert B to GB
-
-            with open('/sys/fs/cgroup/memory.current', 'r') as f:
-                mem_info['used'] = int(f.read().strip()) / (1024 * 1024 * 1024)  # Convert B to GB
-
-        except FileNotFoundError:
-            # Fall back to cgroups v1 paths (older Docker)
-            try:
-                with open('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'r') as f:
-                    mem_limit = int(f.read().strip())
-                    # If the value is very large (close to 2^64), it's effectively unlimited
-                    if mem_limit < 2**63:
-                        mem_info['limit'] = mem_limit / (1024 * 1024 * 1024)  # Convert B to GB
-
-                with open('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'r') as f:
-                    mem_info['used'] = int(f.read().strip()) / (1024 * 1024 * 1024)  # Convert B to GB
-
-            except FileNotFoundError:
-                # Try the third possible location for cgroups
-                try:
-                    with open('/sys/fs/cgroup/memory.limit_in_bytes', 'r') as f:
-                        mem_limit = int(f.read().strip())
-                        if mem_limit < 2**63:
-                            mem_info['limit'] = mem_limit / (1024 * 1024 * 1024)  # Convert B to GB
-
-                    with open('/sys/fs/cgroup/memory.usage_in_bytes', 'r') as f:
-                        mem_info['used'] = int(f.read().strip()) / (1024 * 1024 * 1024)  # Convert B to GB
-
-                except FileNotFoundError:
-                    logging.warning('Could not find cgroup memory information', job_id)
-
-        # Calculate available memory if we have both limit and used
-        if 'limit' in mem_info and 'used' in mem_info:
-            mem_info['available'] = mem_info['limit'] - mem_info['used']
-
-        # Log memory information
-        mem_log_parts = []
-        if 'total' in mem_info:
-            mem_log_parts.append(f"Total={mem_info['total']:.2f}")
-        if 'limit' in mem_info:
-            mem_log_parts.append(f"Limit={mem_info['limit']:.2f}")
-        if 'used' in mem_info:
-            mem_log_parts.append(f"Used={mem_info['used']:.2f}")
-        if 'available' in mem_info:
-            mem_log_parts.append(f"Available={mem_info['available']:.2f}")
-        if 'free' in mem_info:
-            mem_log_parts.append(f"Free={mem_info['free']:.2f}")
-
-        if mem_log_parts:
-            logging.info(f"Container Memory (GB): {', '.join(mem_log_parts)}", job_id)
-        else:
-            logging.info('Container memory information not available', job_id)
-
-        return mem_info
+        return available_models
     except Exception as e:
-        logging.error(f'Error getting container memory info: {str(e)}', job_id)
+        print(f"worker-comfyui - Warning: Could not fetch available models: {e}")
         return {}
 
 
-def get_container_cpu_info(job_id=None):
+def queue_workflow(workflow, client_id):
     """
-    Get CPU information that's actually allocated to the container using cgroups.
-    Returns a dictionary with CPU stats.
-    Also logs the CPU information directly.
+    Queue a workflow to be processed by ComfyUI
+
+    Args:
+        workflow (dict): A dictionary containing the workflow to be processed
+        client_id (str): The client ID for the websocket connection
+
+    Returns:
+        dict: The JSON response from ComfyUI after processing the workflow
+
+    Raises:
+        ValueError: If the workflow validation fails with detailed error information
     """
-    try:
-        cpu_info = {}
+    # Include client_id in the prompt payload
+    payload = {"prompt": workflow, "client_id": client_id}
+    data = json.dumps(payload).encode("utf-8")
 
-        # First get the number of CPUs visible to the container
+    # Use requests for consistency and timeout
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(
+        f"http://{COMFY_HOST}/prompt", data=data, headers=headers, timeout=30
+    )
+
+    # Handle validation errors with detailed information
+    if response.status_code == 400:
+        print(f"worker-comfyui - ComfyUI returned 400. Response body: {response.text}")
         try:
-            # Count available CPUs by checking /proc/cpuinfo
-            available_cpus = 0
-            with open('/proc/cpuinfo', 'r') as f:
-                for line in f:
-                    if line.startswith('processor'):
-                        available_cpus += 1
-            if available_cpus > 0:
-                cpu_info['available_cpus'] = available_cpus
-        except Exception as e:
-            logging.warning(f'Failed to get available CPUs: {str(e)}', job_id)
+            error_data = response.json()
+            print(f"worker-comfyui - Parsed error data: {error_data}")
 
-        # Try getting CPU quota and period from cgroups v2
-        try:
-            with open('/sys/fs/cgroup/cpu.max', 'r') as f:
-                cpu_data = f.read().strip().split()
-                if cpu_data[0] != 'max':
-                    cpu_quota = int(cpu_data[0])
-                    cpu_period = int(cpu_data[1])
-                    # Calculate the number of CPUs as quota/period
-                    cpu_info['allocated_cpus'] = cpu_quota / cpu_period
-        except FileNotFoundError:
-            # Try cgroups v1 paths
-            try:
-                with open('/sys/fs/cgroup/cpu/cpu.cfs_quota_us', 'r') as f:
-                    cpu_quota = int(f.read().strip())
-                with open('/sys/fs/cgroup/cpu/cpu.cfs_period_us', 'r') as f:
-                    cpu_period = int(f.read().strip())
-                if cpu_quota > 0:  # -1 means no limit
-                    cpu_info['allocated_cpus'] = cpu_quota / cpu_period
-            except FileNotFoundError:
-                # Try another possible location
-                try:
-                    with open('/sys/fs/cgroup/cpu.cfs_quota_us', 'r') as f:
-                        cpu_quota = int(f.read().strip())
-                    with open('/sys/fs/cgroup/cpu.cfs_period_us', 'r') as f:
-                        cpu_period = int(f.read().strip())
-                    if cpu_quota > 0:
-                        cpu_info['allocated_cpus'] = cpu_quota / cpu_period
-                except FileNotFoundError:
-                    logging.warning('Could not find cgroup CPU quota information', job_id)
+            # Try to extract meaningful error information
+            error_message = "Workflow validation failed"
+            error_details = []
 
-        # Get container CPU usage stats
-        try:
-            # Try cgroups v2 path
-            with open('/sys/fs/cgroup/cpu.stat', 'r') as f:
-                for line in f:
-                    if line.startswith('usage_usec'):
-                        cpu_info['usage_usec'] = int(line.split()[1])
-                        break
-        except FileNotFoundError:
-            # Try cgroups v1 path
-            try:
-                with open('/sys/fs/cgroup/cpu/cpuacct.usage', 'r') as f:
-                    cpu_info['usage_usec'] = int(f.read().strip()) / 1000  # Convert ns to μs
-            except FileNotFoundError:
-                try:
-                    with open('/sys/fs/cgroup/cpuacct.usage', 'r') as f:
-                        cpu_info['usage_usec'] = int(f.read().strip()) / 1000
-                except FileNotFoundError:
-                    pass
+            # ComfyUI seems to return different error formats, let's handle them all
+            if "error" in error_data:
+                error_info = error_data["error"]
+                if isinstance(error_info, dict):
+                    error_message = error_info.get("message", error_message)
+                    if error_info.get("type") == "prompt_outputs_failed_validation":
+                        error_message = "Workflow validation failed"
+                else:
+                    error_message = str(error_info)
 
-        # Log CPU information
-        cpu_log_parts = []
-        if 'allocated_cpus' in cpu_info:
-            cpu_log_parts.append(f"Allocated CPUs={cpu_info['allocated_cpus']:.2f}")
-        if 'available_cpus' in cpu_info:
-            cpu_log_parts.append(f"Available CPUs={cpu_info['available_cpus']}")
-        if 'usage_usec' in cpu_info:
-            cpu_log_parts.append(f"Usage={cpu_info['usage_usec']/1000000:.2f}s")
-
-        if cpu_log_parts:
-            logging.info(f"Container CPU: {', '.join(cpu_log_parts)}", job_id)
-        else:
-            logging.info('Container CPU allocation information not available', job_id)
-
-        return cpu_info
-    except Exception as e:
-        logging.error(f'Error getting container CPU info: {str(e)}', job_id)
-        return {}
-
-
-def get_container_disk_info(job_id=None):
-    """
-    Get disk space information available to the container.
-    Returns a dictionary with disk space stats.
-    Also logs the disk space information directly.
-    """
-    try:
-        disk_info = {}
-
-        # Get disk usage statistics for the root (/) mount
-        try:
-            total, used, free = shutil.disk_usage('/')
-            disk_info['total_bytes'] = total
-            disk_info['used_bytes'] = used
-            disk_info['free_bytes'] = free
-            disk_info['usage_percent'] = (used / total) * 100
-        except Exception as e:
-            if job_id:
-                logging.warning(f'Failed to get disk usage stats: {str(e)}', job_id)
-            else:
-                logging.warning(f'Failed to get disk usage stats: {str(e)}', job_id)
-
-        # Try to get disk quota information from cgroups v2
-        try:
-            with open('/sys/fs/cgroup/io.stat', 'r') as f:
-                content = f.read().strip()
-                if content:
-                    disk_info['io_stats_raw'] = content
-        except FileNotFoundError:
-            # Try cgroups v1
-            try:
-                with open('/sys/fs/cgroup/blkio/blkio.throttle.io_service_bytes', 'r') as f:
-                    for line in f:
-                        parts = line.strip().split()
-                        if len(parts) >= 3 and 'Total' in line:
-                            disk_info['io_bytes'] = int(parts[2])
-                            break
-            except FileNotFoundError:
-                try:
-                    with open('/sys/fs/cgroup/blkio.throttle.io_service_bytes', 'r') as f:
-                        for line in f:
-                            parts = line.strip().split()
-                            if len(parts) >= 3 and 'Total' in line:
-                                disk_info['io_bytes'] = int(parts[2])
-                                break
-                except FileNotFoundError:
-                    if job_id:
-                        logging.warning('Could not find cgroup disk I/O information', job_id)
+            # Check for node validation errors in the response
+            if "node_errors" in error_data:
+                for node_id, node_error in error_data["node_errors"].items():
+                    if isinstance(node_error, dict):
+                        for error_type, error_msg in node_error.items():
+                            error_details.append(
+                                f"Node {node_id} ({error_type}): {error_msg}"
+                            )
                     else:
-                        logging.warning('Could not find cgroup disk I/O information', job_id)
+                        error_details.append(f"Node {node_id}: {node_error}")
 
-        # Get disk inodes information (important for container environments)
-        try:
-            import os
-            stat = os.statvfs('/')
-            disk_info['total_inodes'] = stat.f_files
-            disk_info['free_inodes'] = stat.f_ffree
-            disk_info['used_inodes'] = stat.f_files - stat.f_ffree
-            if stat.f_files > 0:
-                disk_info['inodes_usage_percent'] = ((stat.f_files - stat.f_ffree) / stat.f_files) * 100
-        except Exception as e:
-            if job_id:
-                logging.warning(f'Failed to get inode information: {str(e)}', job_id)
+            # Check if the error data itself contains validation info
+            if error_data.get("type") == "prompt_outputs_failed_validation":
+                error_message = error_data.get("message", "Workflow validation failed")
+                # For this type of error, we need to parse the validation details from logs
+                # Since ComfyUI doesn't seem to include detailed validation errors in the response
+                # Let's provide a more helpful generic message
+                available_models = get_available_models()
+                if available_models.get("checkpoints"):
+                    error_message += f"\n\nThis usually means a required model or parameter is not available."
+                    error_message += f"\nAvailable checkpoint models: {', '.join(available_models['checkpoints'])}"
+                else:
+                    error_message += "\n\nThis usually means a required model or parameter is not available."
+                    error_message += "\nNo checkpoint models appear to be available. Please check your model installation."
+
+                raise ValueError(error_message)
+
+            # If we have specific validation errors, format them nicely
+            if error_details:
+                detailed_message = f"{error_message}:\n" + "\n".join(
+                    f"• {detail}" for detail in error_details
+                )
+
+                # Try to provide helpful suggestions for common errors
+                if any(
+                    "not in list" in detail and "ckpt_name" in detail
+                    for detail in error_details
+                ):
+                    available_models = get_available_models()
+                    if available_models.get("checkpoints"):
+                        detailed_message += f"\n\nAvailable checkpoint models: {', '.join(available_models['checkpoints'])}"
+                    else:
+                        detailed_message += "\n\nNo checkpoint models appear to be available. Please check your model installation."
+
+                raise ValueError(detailed_message)
             else:
-                logging.warning(f'Failed to get inode information: {str(e)}', job_id)
+                # Fallback to the raw response if we can't parse specific errors
+                raise ValueError(f"{error_message}. Raw response: {response.text}")
 
-        # Log disk information
-        disk_log_parts = []
-        if 'total_bytes' in disk_info:
-            disk_log_parts.append(f"Total={disk_info['total_bytes']/(1024**3):.2f}GB")
-        if 'used_bytes' in disk_info:
-            disk_log_parts.append(f"Used={disk_info['used_bytes']/(1024**3):.2f}GB")
-        if 'free_bytes' in disk_info:
-            disk_log_parts.append(f"Free={disk_info['free_bytes']/(1024**3):.2f}GB")
-        if 'usage_percent' in disk_info:
-            disk_log_parts.append(f"Usage={disk_info['usage_percent']:.2f}%")
-        if 'inodes_usage_percent' in disk_info:
-            disk_log_parts.append(f"Inodes={disk_info['inodes_usage_percent']:.2f}%")
-        if 'io_bytes' in disk_info:
-            disk_log_parts.append(f"I/O={disk_info['io_bytes']/(1024**2):.2f}MB")
+        except (json.JSONDecodeError, KeyError) as e:
+            # If we can't parse the error response, fall back to the raw text
+            raise ValueError(
+                f"ComfyUI validation failed (could not parse error response): {response.text}"
+            )
 
-        if disk_log_parts:
-            if job_id:
-                logging.info(f"Container Disk: {', '.join(disk_log_parts)}", job_id)
-            else:
-                logging.info(f"Container Disk: {', '.join(disk_log_parts)}", job_id)
-        else:
-            if job_id:
-                logging.info('Container disk space information not available', job_id)
-            else:
-                logging.info('Container disk space information not available', job_id)
-
-        return disk_info
-    except Exception as e:
-        if job_id:
-            logging.error(f'Error getting container disk info: {str(e)}', job_id)
-        else:
-            logging.error(f'Error getting container disk info: {str(e)}', job_id)
-        return {}
+    # For other HTTP errors, raise them normally
+    response.raise_for_status()
+    return response.json()
 
 
-# ---------------------------------------------------------------------------- #
-#                                RunPod Handler                                #
-# ---------------------------------------------------------------------------- #
-def handler(event):
-    job_id = event['id']
-    os.environ['RUNPOD_JOB_ID'] = job_id
+def get_history(prompt_id):
+    """
+    Retrieve the history of a given prompt using its ID
 
+    Args:
+        prompt_id (str): The ID of the prompt whose history is to be retrieved
+
+    Returns:
+        dict: The history of the prompt, containing all the processing steps and results
+    """
+    # Use requests for consistency and timeout
+    response = requests.get(f"http://{COMFY_HOST}/history/{prompt_id}", timeout=30)
+    response.raise_for_status()
+    return response.json()
+
+
+def get_image_data(filename, subfolder, image_type):
+    """
+    Fetch image bytes from the ComfyUI /view endpoint.
+
+    Args:
+        filename (str): The filename of the image.
+        subfolder (str): The subfolder where the image is stored.
+        image_type (str): The type of the image (e.g., 'output').
+
+    Returns:
+        bytes: The raw image data, or None if an error occurs.
+    """
+    print(
+        f"worker-comfyui - Fetching image data: type={image_type}, subfolder={subfolder}, filename={filename}"
+    )
+    data = {"filename": filename, "subfolder": subfolder, "type": image_type}
+    url_values = urllib.parse.urlencode(data)
     try:
-        memory_info = get_container_memory_info(job_id)
-        cpu_info = get_container_cpu_info(job_id)
-        disk_info = get_container_disk_info(job_id)
-        disk_free_bytes = disk_info.get('free_bytes')
+        # Use requests for consistency and timeout
+        response = requests.get(f"http://{COMFY_HOST}/view?{url_values}", timeout=60)
+        response.raise_for_status()
+        print(f"worker-comfyui - Successfully fetched image data for {filename}")
+        return response.content
+    except requests.Timeout:
+        print(f"worker-comfyui - Timeout fetching image data for {filename}")
+        return None
+    except requests.RequestException as e:
+        print(f"worker-comfyui - Error fetching image data for {filename}: {e}")
+        return None
+    except Exception as e:
+        print(
+            f"worker-comfyui - Unexpected error fetching image data for {filename}: {e}"
+        )
+        return None
 
-        if disk_free_bytes and disk_free_bytes < DISK_MIN_FREE_BYTES:
-            free_gb = disk_free_bytes / (1024**3)
-            raise Exception(f'Insufficient free container disk space: {free_gb:.2f} GB available (minimum 0.5 GB required)')
 
-        validated_input = validate(event['input'], INPUT_SCHEMA)
+def callback_api(payload):
+    if CALLBACK_API_ENDPOINT != "":
+        try:
+            headers = {"Authorization": f"Bearer {CALLBACK_API_SECRET}"}
+            response = requests.post(
+                CALLBACK_API_ENDPOINT,
+                json=payload,
+                headers=headers,
+                timeout=30,
+            )
+            if response.status_code != 200:
+                print(f"Failed to send log to API. Status code: {response.status_code}")
+        except Exception as e:
+            print(f"worker-comfyui - Error during callback: {e}")
+            print(traceback.format_exc())
+            return {"error": f"An unexpected error occurred: {e}"}
 
-        if 'errors' in validated_input:
+
+def handler(job):
+    """
+    Handles a job using ComfyUI via websockets for status and image retrieval.
+
+    Args:
+        job (dict): A dictionary containing job details and input parameters.
+
+    Returns:
+        dict: A dictionary containing either an error message or a success status with generated images.
+    """
+    job_input = job["input"]
+    job_id = job["id"]
+
+    # Make sure that the input is valid
+    validated_data, error_message = validate_input(job_input)
+    if error_message:
+        return {"error": error_message}
+
+    # Extract validated data
+    workflow = validated_data["workflow"]
+    input_images = validated_data.get("images")
+
+    # Make sure that the ComfyUI HTTP API is available before proceeding
+    if not check_server(
+        f"http://{COMFY_HOST}/",
+        COMFY_API_AVAILABLE_MAX_RETRIES,
+        COMFY_API_AVAILABLE_INTERVAL_MS,
+    ):
+        return {
+            "error": f"ComfyUI server ({COMFY_HOST}) not reachable after multiple retries."
+        }
+
+    # Upload input images if they exist
+    if input_images:
+        upload_result = upload_images(input_images)
+        if upload_result["status"] == "error":
+            # Return upload errors
             return {
-                'error': '\n'.join(validated_input['errors'])
+                "error": "Failed to upload one or more input images",
+                "details": upload_result["details"],
             }
 
-        payload = validated_input['validated_input']
-        workflow_name = payload['workflow']
-        payload = payload['payload']
+    ws = None
+    client_id = str(uuid.uuid4())
+    prompt_id = None
+    output_data = []
+    errors = []
 
-        if workflow_name == 'default':
-            workflow_name = 'txt2img'
+    try:
+        # Establish WebSocket connection
+        ws_url = f"ws://{COMFY_HOST}/ws?clientId={client_id}"
+        print(f"worker-comfyui - Connecting to websocket: {ws_url}")
+        ws = websocket.WebSocket()
+        ws.connect(ws_url, timeout=10)
+        print(f"worker-comfyui - Websocket connected")
 
-        logging.info(f'Workflow: {workflow_name}', job_id)
+        # Queue the workflow
+        try:
+            queued_workflow = queue_workflow(workflow, client_id)
+            prompt_id = queued_workflow.get("prompt_id")
+            if not prompt_id:
+                raise ValueError(
+                    f"Missing 'prompt_id' in queue response: {queued_workflow}"
+                )
+            print(f"worker-comfyui - Queued workflow with ID: {prompt_id}")
+        except requests.RequestException as e:
+            print(f"worker-comfyui - Error queuing workflow: {e}")
+            raise ValueError(f"Error queuing workflow: {e}")
+        except Exception as e:
+            print(f"worker-comfyui - Unexpected error queuing workflow: {e}")
+            # For ValueError exceptions from queue_workflow, pass through the original message
+            if isinstance(e, ValueError):
+                raise e
+            else:
+                raise ValueError(f"Unexpected error queuing workflow: {e}")
 
-        if workflow_name != 'custom':
+        # Wait for execution completion via WebSocket
+        print(f"worker-comfyui - Waiting for workflow execution ({prompt_id})...")
+        execution_done = False
+        while True:
             try:
-                payload = get_workflow_payload(workflow_name, payload)
-            except Exception as e:
-                logging.error(f'Unable to load workflow payload for: {workflow_name}', job_id)
-                raise
+                out = ws.recv()
+                if isinstance(out, str):
+                    message = json.loads(out)
+                    if message.get("type") == "status":
+                        status_data = message.get("data", {}).get("status", {})
+                        print(
+                            f"worker-comfyui - Status update: {status_data.get('exec_info', {}).get('queue_remaining', 'N/A')} items remaining in queue"
+                        )
+                    elif message.get("type") == "executing":
+                        data = message.get("data", {})
+                        if (
+                            data.get("node") is None
+                            and data.get("prompt_id") == prompt_id
+                        ):
+                            print(
+                                f"worker-comfyui - Execution finished for prompt {prompt_id}"
+                            )
+                            execution_done = True
+                            break
+                    elif message.get("type") == "execution_error":
+                        data = message.get("data", {})
+                        if data.get("prompt_id") == prompt_id:
+                            error_details = f"Node Type: {data.get('node_type')}, Node ID: {data.get('node_id')}, Message: {data.get('exception_message')}"
+                            print(
+                                f"worker-comfyui - Execution error received: {error_details}"
+                            )
+                            errors.append(f"Workflow execution error: {error_details}")
+                            break
+                else:
+                    continue
+            except websocket.WebSocketTimeoutException:
+                print(f"worker-comfyui - Websocket receive timed out. Still waiting...")
+                continue
+            except websocket.WebSocketConnectionClosedException as closed_err:
+                try:
+                    # Attempt to reconnect
+                    ws = _attempt_websocket_reconnect(
+                        ws_url,
+                        WEBSOCKET_RECONNECT_ATTEMPTS,
+                        WEBSOCKET_RECONNECT_DELAY_S,
+                        closed_err,
+                    )
 
-        create_unique_filename_prefix(payload)
-        logging.debug('Queuing prompt', job_id)
+                    print(
+                        "worker-comfyui - Resuming message listening after successful reconnect."
+                    )
+                    continue
+                except (
+                    websocket.WebSocketConnectionClosedException
+                ) as reconn_failed_err:
+                    # If _attempt_websocket_reconnect fails, it raises this exception
+                    # Let this exception propagate to the outer handler's except block
+                    raise reconn_failed_err
 
-        queue_response = send_post_request(
-            'prompt',
+            except json.JSONDecodeError:
+                print(f"worker-comfyui - Received invalid JSON message via websocket.")
+
+        if not execution_done and not errors:
+            raise ValueError(
+                "Workflow monitoring loop exited without confirmation of completion or error."
+            )
+
+        # Fetch history even if there were execution errors, some outputs might exist
+        print(f"worker-comfyui - Fetching history for prompt {prompt_id}...")
+        history = get_history(prompt_id)
+
+        if prompt_id not in history:
+            error_msg = f"Prompt ID {prompt_id} not found in history after execution."
+            print(f"worker-comfyui - {error_msg}")
+            if not errors:
+                return {"error": error_msg}
+            else:
+                errors.append(error_msg)
+                return {
+                    "error": "Job processing failed, prompt ID not found in history.",
+                    "details": errors,
+                }
+
+        prompt_history = history.get(prompt_id, {})
+        outputs = prompt_history.get("outputs", {})
+
+        if not outputs:
+            warning_msg = f"No outputs found in history for prompt {prompt_id}."
+            print(f"worker-comfyui - {warning_msg}")
+            if not errors:
+                errors.append(warning_msg)
+
+        print(f"worker-comfyui - Processing {len(outputs)} output nodes...")
+        for node_id, node_output in outputs.items():
+            if "images" in node_output:
+                print(
+                    f"worker-comfyui - Node {node_id} contains {len(node_output['images'])} image(s)"
+                )
+                for image_info in node_output["images"]:
+                    filename = image_info.get("filename")
+                    subfolder = image_info.get("subfolder", "")
+                    img_type = image_info.get("type")
+
+                    # skip temp images
+                    if img_type == "temp":
+                        print(
+                            f"worker-comfyui - Skipping image {filename} because type is 'temp'"
+                        )
+                        continue
+
+                    if not filename:
+                        warn_msg = f"Skipping image in node {node_id} due to missing filename: {image_info}"
+                        print(f"worker-comfyui - {warn_msg}")
+                        errors.append(warn_msg)
+                        continue
+
+                    image_bytes = get_image_data(filename, subfolder, img_type)
+
+                    if image_bytes:
+                        file_extension = os.path.splitext(filename)[1] or ".png"
+
+                        if os.environ.get("BUCKET_ENDPOINT_URL"):
+                            try:
+                                with tempfile.NamedTemporaryFile(
+                                    suffix=file_extension, delete=False
+                                ) as temp_file:
+                                    temp_file.write(image_bytes)
+                                    temp_file_path = temp_file.name
+                                print(
+                                    f"worker-comfyui - Wrote image bytes to temporary file: {temp_file_path}"
+                                )
+
+                                print(f"worker-comfyui - Uploading {filename} to S3...")
+                                s3_url = rp_upload.upload_image(job_id, temp_file_path)
+                                os.remove(temp_file_path)  # Clean up temp file
+                                print(
+                                    f"worker-comfyui - Uploaded {filename} to S3: {s3_url}"
+                                )
+                                # Append dictionary with filename and URL
+                                output_data.append(
+                                    {
+                                        "filename": filename,
+                                        "type": "s3_url",
+                                        "data": s3_url,
+                                    }
+                                )
+                                callback_api(
+                                    {
+                                        "action": "s3_upload",
+                                        "prompt_id": prompt_id,
+                                        "filename": filename,
+                                        "data": s3_url,
+                                    }
+                                )
+                            except Exception as e:
+                                error_msg = f"Error uploading {filename} to S3: {e}"
+                                print(f"worker-comfyui - {error_msg}")
+                                errors.append(error_msg)
+                                if "temp_file_path" in locals() and os.path.exists(
+                                    temp_file_path
+                                ):
+                                    try:
+                                        os.remove(temp_file_path)
+                                    except OSError as rm_err:
+                                        print(
+                                            f"worker-comfyui - Error removing temp file {temp_file_path}: {rm_err}"
+                                        )
+                        else:
+                            # Return as base64 string
+                            try:
+                                base64_image = base64.b64encode(image_bytes).decode(
+                                    "utf-8"
+                                )
+                                # Append dictionary with filename and base64 data
+                                output_data.append(
+                                    {
+                                        "filename": filename,
+                                        "type": "base64",
+                                        "data": base64_image,
+                                    }
+                                )
+                                print(f"worker-comfyui - Encoded {filename} as base64")
+                            except Exception as e:
+                                error_msg = f"Error encoding {filename} to base64: {e}"
+                                print(f"worker-comfyui - {error_msg}")
+                                errors.append(error_msg)
+                    else:
+                        error_msg = f"Failed to fetch image data for {filename} from /view endpoint."
+                        errors.append(error_msg)
+
+            # Check for other output types
+            other_keys = [k for k in node_output.keys() if k != "images"]
+            if other_keys:
+                warn_msg = (
+                    f"Node {node_id} produced unhandled output keys: {other_keys}."
+                )
+                print(f"worker-comfyui - WARNING: {warn_msg}")
+                print(
+                    f"worker-comfyui - --> If this output is useful, please consider opening an issue on GitHub to discuss adding support."
+                )
+
+    except websocket.WebSocketException as e:
+        print(f"worker-comfyui - WebSocket Error: {e}")
+        print(traceback.format_exc())
+        return {"error": f"WebSocket communication error: {e}"}
+    except requests.RequestException as e:
+        print(f"worker-comfyui - HTTP Request Error: {e}")
+        print(traceback.format_exc())
+        return {"error": f"HTTP communication error with ComfyUI: {e}"}
+    except ValueError as e:
+        print(f"worker-comfyui - Value Error: {e}")
+        print(traceback.format_exc())
+        return {"error": str(e)}
+    except Exception as e:
+        print(f"worker-comfyui - Unexpected Handler Error: {e}")
+        print(traceback.format_exc())
+        return {"error": f"An unexpected error occurred: {e}"}
+    finally:
+        if ws and ws.connected:
+            print(f"worker-comfyui - Closing websocket connection.")
+            ws.close()
+
+    final_result = {}
+
+    if output_data:
+        final_result["images"] = output_data
+
+    if errors:
+        final_result["errors"] = errors
+        print(f"worker-comfyui - Job completed with errors/warnings: {errors}")
+        callback_api(
             {
-                'prompt': payload
+                "action": "error",
+                "prompt_id": prompt_id,
+                "errors": errors,
             }
         )
-
-        if queue_response.status_code == 200:
-            resp_json = queue_response.json()
-            prompt_id = resp_json['prompt_id']
-            logging.info(f'Prompt queued successfully: {prompt_id}', job_id)
-            retries = 0
-
-            while True:
-                # Only log every 15 retries so the logs don't get spammed
-                if retries == 0 or retries % 15 == 0:
-                    logging.info(f'Getting status of prompt: {prompt_id}', job_id)
-
-                r = send_get_request(f'history/{prompt_id}')
-                resp_json = r.json()
-
-                if r.status_code == 200 and len(resp_json):
-                    break
-
-                time.sleep(0.2)
-                retries += 1
-
-            status = resp_json[prompt_id]['status']
-
-            if status['status_str'] == 'success' and status['completed']:
-                # Job was processed successfully
-                outputs = resp_json[prompt_id]['outputs']
-
-                if len(outputs):
-                    logging.info(f'Images generated successfully for prompt: {prompt_id}', job_id)
-                    output_images = get_output_images(outputs)
-                    images = []
-
-                    for output_image in output_images:
-                        filename = output_image.get('filename')
-
-                        if output_image['type'] == 'output':
-                            image_path = f'{VOLUME_MOUNT_PATH}/ComfyUI/output/{filename}'
-
-                            if os.path.exists(image_path):
-                                with open(image_path, 'rb') as image_file:
-                                    image_data = base64.b64encode(image_file.read()).decode('utf-8')
-                                    images.append(image_data)
-                                    logging.info(f'Deleting output file: {image_path}', job_id)
-                                    os.remove(image_path)
-                        elif output_image['type'] == 'temp':
-                            image_path = f'{VOLUME_MOUNT_PATH}/ComfyUI/temp/{filename}'
-
-                            # Clean up temp images that aren't used by the API
-                            if os.path.exists(image_path):
-                                logging.info(f'Deleting temp file: {image_path}', job_id)
-
-                                try:
-                                    os.remove(image_path)
-                                except Exception as e:
-                                    logging.error(f'Error deleting temp file {image_path}: {e}')
-                    return {
-                        'images': images
-                    }
-                else:
-                    raise RuntimeError(f'No output found for prompt id: {prompt_id}')
-            else:
-                # Job did not process successfully
-                for message in status['messages']:
-                    key, value = message
-
-                    if key == 'execution_error':
-                        if 'node_type' in value and 'exception_message' in value:
-                            node_type = value['node_type']
-                            exception_message = value['exception_message']
-                            raise RuntimeError(f'{node_type}: {exception_message}')
-                        else:
-                            # Log to file instead of RunPod because the output tends to be too verbose
-                            # and gets dropped by RunPod logging
-                            error_msg = f'Job did not process successfully for prompt_id: {prompt_id}'
-                            logging.error(error_msg, job_id)
-                            logging.info(f'{job_id}: Response JSON: {resp_json}', job_id)
-                            raise RuntimeError(error_msg)
-
-        else:
-            try:
-                queue_response_content = queue_response.json()
-            except Exception as e:
-                queue_response_content = str(queue_response.content)
-
-            logging.error(f'HTTP Status code: {queue_response.status_code}', job_id)
-            logging.error(queue_response_content, job_id)
-
-            return {
-                'error': f'HTTP status code: {queue_response.status_code}',
-                'output': queue_response_content
-            }
-    except Exception as e:
-        logging.error(f'An exception was raised: {e}', job_id)
-
+    if not output_data and errors:
+        print(f"worker-comfyui - Job failed with no output images.")
         return {
-            'error': traceback.format_exc(),
-            'refresh_worker': True
+            "error": "Job processing failed",
+            "details": errors,
         }
+    elif not output_data and not errors:
+        print(
+            f"worker-comfyui - Job completed successfully, but the workflow produced no images."
+        )
+        final_result["status"] = "success_no_images"
+        final_result["images"] = []
 
-
-def setup_logging():
-    root_logger = logging.getLogger()
-    root_logger.setLevel(LOG_LEVEL)
-
-    # Remove all existing handlers from the root logger
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-
-    formatter = logging.Formatter('%(asctime)s : %(levelname)s : %(message)s')
-    log_handler = SnapLogHandler(APP_NAME)
-    log_handler.setFormatter(formatter)
-    root_logger.addHandler(log_handler)
-
-
-if __name__ == '__main__':
-    session = requests.Session()
-    retries = Retry(total=10, backoff_factor=0.1, status_forcelist=[502, 503, 504])
-    session.mount('http://', HTTPAdapter(max_retries=retries))
-    setup_logging()
-    wait_for_service(url=f'{BASE_URI}/system_stats')
-    logging.info('ComfyUI API is ready')
-    logging.info('Starting RunPod Serverless...')
-    runpod.serverless.start(
+    print(f"worker-comfyui - Job completed. Returning {len(output_data)} image(s).")
+    callback_api(
         {
-            'handler': handler
+            "action": "complete",
+            "prompt_id": prompt_id,
+            "result": final_result,
         }
     )
+    return final_result
+
+
+if __name__ == "__main__":
+    print("worker-comfyui - Starting handler...")
+    runpod.serverless.start({"handler": handler})

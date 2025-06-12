@@ -51,7 +51,7 @@ pip install -r requirements.txt
 ```
 2. Install the Serverless dependencies:
 ```bash
-pip install requests runpod==1.7.9
+pip install requests runpod==1.7.9 websocket-client
 pip install onnxruntime-gpu
 pip install triton
 

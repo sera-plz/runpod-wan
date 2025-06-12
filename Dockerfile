@@ -36,5 +36,8 @@ COPY schemas /schemas
 # Add workflows
 COPY workflows /workflows
 
+COPY comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
+RUN chmod +x /usr/local/bin/comfy-manager-set-mode
+
 RUN chmod +x /start.sh
 ENTRYPOINT /start.sh
