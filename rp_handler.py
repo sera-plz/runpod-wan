@@ -657,6 +657,7 @@ def handler(job):
                 }
 
         prompt_history = history.get(prompt_id, {})
+        prompt_status = prompt_history.get("status", {})
         outputs = prompt_history.get("outputs", {})
 
         if not outputs:
@@ -664,6 +665,17 @@ def handler(job):
             print(f"worker-comfyui - {warning_msg}")
             if not errors:
                 errors.append(warning_msg)
+
+        execution_time = 0
+        if prompt_status["status_str"] == "success":
+            started_at = 0
+            ended_at = 0
+            for msg_id, msg_body in prompt_status["messages"]:
+                if msg_id == "execution_start":
+                    started_at = msg_body["timestamp"]
+                if msg_id == "execution_success":
+                    ended_at = msg_body["timestamp"]
+            execution_time = (ended_at - started_at) / 1000
 
         print(f"worker-comfyui - Processing {len(outputs)} output nodes...")
         for node_id, node_output in outputs.items():
@@ -725,6 +737,7 @@ def handler(job):
                                         "prompt_id": prompt_id,
                                         "filename": filename,
                                         "data": s3_url,
+                                        "execution_time": execution_time,
                                     }
                                 )
                             except Exception as e:
