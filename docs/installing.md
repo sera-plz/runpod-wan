@@ -77,23 +77,7 @@ aria2c -x16 -s16 -d /workspace/comfywan/models/clip_vision -o clip_vision_h.safe
 # Download VAE
 aria2c -x16 -s16 -d /workspace/comfywan/models/vae -o wan_2.1_vae.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
 
-# CausVid Lora
-aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Wan21_CausVid_14B_T2V_lora_rank32.safetensors --continue=true https://civitai.com/api/download/models/1794316?type=Model&format=SafeTensor
-
-aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors
-
-# AccVid lora
-aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors
-
-# WAN-Fun reward lora
-aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Wan2.1-Fun-14B-InP-MPS.safetensors --continue=true https://huggingface.co/alibaba-pai/Wan2.1-Fun-Reward-LoRAs/resolve/main/Wan2.1-Fun-14B-InP-MPS.safetensors
-
-# cinematic zoom
-aria2c -x16 -s16 -d /workspace/comfywan/models/loras -o Su_MCraft_Ep60.safetensors --continue=true "https://civitai.com/api/download/models/1599906?type=Model&format=SafeTensor&token=${token}"
-# trigger words:
-# cinematic camera pan
-# cinematic camera zoom in
-# cinematic camera zoom out
+# see loras.md for LORAs
 
 # Download upscaler
 aria2c -x16 -s16 -d /workspace/comfywan/models/upscale_models -o 4xLSDIR.pth --continue=true https://github.com/Phhofm/models/raw/main/4xLSDIR/4xLSDIR.pth
