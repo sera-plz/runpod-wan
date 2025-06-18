@@ -2,9 +2,9 @@
   "3": {
     "inputs": {
       "seed": 625561680757703,
-      "steps": 4,
+      "steps": 5,
       "cfg": 1,
-      "sampler_name": "uni_pc",
+      "sampler_name": "lcm",
       "scheduler": "simple",
       "denoise": 1,
       "model": [
