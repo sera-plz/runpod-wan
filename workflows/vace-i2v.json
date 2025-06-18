@@ -1,10 +1,10 @@
 {
   "3": {
     "inputs": {
-      "seed": 760764922880940,
-      "steps": 4,
+      "seed": 725642705770281,
+      "steps": 5,
       "cfg": 1,
-      "sampler_name": "uni_pc",
+      "sampler_name": "lcm",
       "scheduler": "simple",
       "denoise": 1,
       "model": [
@@ -31,7 +31,7 @@
   },
   "6": {
     "inputs": {
-      "text": "the dragon breathes full of freezing ice ray",
+      "text": "The video shows an Asian kid looking forward. Slowly, the h01k green hulk transformation begins. His muscles start to swell, veins bulge beneath his skin, and his face tightens with strain. His skin gradually shifts to green as his body continues to grow. His clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring.",
       "clip": [
         "106",
         1
@@ -169,7 +169,7 @@
   },
   "73": {
     "inputs": {
-      "image": "input_dragon.jpg"
+      "image": "jjj.jpg"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -192,30 +192,45 @@
       },
       "lora_1": {
         "on": true,
-        "lora": "Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors",
+        "lora": "Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors",
         "strength": 1
       },
       "lora_2": {
         "on": true,
-        "lora": "Wan21_CausVid_14B_T2V_lora_rank32.safetensors",
-        "strength": 0.5
+        "lora": "Wan2.1-Fun-14B-InP-MPS.safetensors",
+        "strength": 0.3
       },
       "lora_3": {
-        "on": true,
-        "lora": "Wan2.1-Fun-14B-InP-MPS.safetensors",
-        "strength": 1
-      },
-      "lora_4": {
         "on": false,
         "lora": "Su_MCraft_Ep60.safetensors",
         "strength": 1
       },
-      "lora_5": {
+      "lora_4": {
         "on": false,
         "lora": "deepthroat_epoch_80.safetensors",
         "strength": 1
       },
+      "lora_5": {
+        "on": false,
+        "lora": "wan_pov_missionary_i2v_v1.1.safetensors",
+        "strength": 1
+      },
       "lora_6": {
+        "on": false,
+        "lora": "dbc.safetensors",
+        "strength": 1
+      },
+      "lora_7": {
+        "on": true,
+        "lora": "Hulk_epoch35.safetensors",
+        "strength": 1
+      },
+      "lora_8": {
+        "on": false,
+        "lora": "super_saiyan_35_epochs.safetensors",
+        "strength": 1
+      },
+      "lora_9": {
         "on": false,
         "lora": "wan_pov_missionary_i2v_v1.1.safetensors",
         "strength": 1
