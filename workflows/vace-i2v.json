@@ -221,7 +221,7 @@
         "strength": 1
       },
       "lora_7": {
-        "on": true,
+        "on": false,
         "lora": "Hulk_epoch35.safetensors",
         "strength": 1
       },
