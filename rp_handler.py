@@ -561,7 +561,7 @@ def handler(job):
                     f"Missing 'prompt_id' in queue response: {queued_workflow}"
                 )
             print(f"worker-comfyui - Queued workflow with ID: {prompt_id}")
-            callback_api({"action": "in_queue", "prompt_id": prompt_id})
+            callback_api({"action": "in_queue", "job_id": job_id})
         except requests.RequestException as e:
             print(f"worker-comfyui - Error queuing workflow: {e}")
             raise ValueError(f"Error queuing workflow: {e}")
@@ -734,7 +734,7 @@ def handler(job):
                                 callback_api(
                                     {
                                         "action": "s3_upload",
-                                        "prompt_id": prompt_id,
+                                        "job_id": job_id,
                                         "filename": filename,
                                         "data": s3_url,
                                         "execution_time": execution_time,
@@ -819,7 +819,7 @@ def handler(job):
         callback_api(
             {
                 "action": "error",
-                "prompt_id": prompt_id,
+                "job_id": job_id,
                 "errors": errors,
             }
         )
@@ -840,7 +840,7 @@ def handler(job):
     callback_api(
         {
             "action": "complete",
-            "prompt_id": prompt_id,
+            "job_id": job_id,
             "result": final_result,
         }
     )
