@@ -7,25 +7,10 @@ token=YOUR_TOKEN
 LORAs:
 ```bash
 # lightx2v self-forcing
-aria2c -x16 -s16 -d /workspace/models/loras -o Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors
+aria2c -x16 -s16 -d /workspace/models/loras -o lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank32_bf16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank32_bf16.safetensors
 
-# CausVid Lora
-aria2c -x16 -s16 -d /workspace/models/loras -o Wan21_CausVid_14B_T2V_lora_rank32.safetensors --continue=true https://civitai.com/api/download/models/1794316?type=Model&format=SafeTensor
-
-aria2c -x16 -s16 -d /workspace/models/loras -o Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_CausVid_14B_T2V_lora_rank32_v2.safetensors
-
-# AccVid lora
-aria2c -x16 -s16 -d /workspace/models/loras -o Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan21_AccVid_T2V_14B_lora_rank32_fp16.safetensors
-
-# WAN-Fun reward lora
-aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.1-Fun-14B-InP-MPS.safetensors --continue=true https://huggingface.co/alibaba-pai/Wan2.1-Fun-Reward-LoRAs/resolve/main/Wan2.1-Fun-14B-InP-MPS.safetensors
-
-# cinematic zoom
-aria2c -x16 -s16 -d /workspace/models/loras -o Su_MCraft_Ep60.safetensors --continue=true "https://civitai.com/api/download/models/1599906?type=Model&format=SafeTensor&token=${token}"
-# trigger words:
-# cinematic camera pan
-# cinematic camera zoom in
-# cinematic camera zoom out
+# lightx2v i2v self-forcing
+aria2c -x16 -s16 -d /workspace/models/loras -o lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
 
 # phut hon dance
 aria2c -x16 -s16 -d /workspace/models/loras -o dbc.safetensors --continue=true "https://civitai.com/api/download/models/1542806?type=Model&format=SafeTensor&token=${token}"

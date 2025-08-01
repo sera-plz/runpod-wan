@@ -23,6 +23,7 @@ if [ -d "/runpod-volume" ]; then
   : "${COMFY_LOG_LEVEL:=INFO}"
 
   # python main.py --port 3000 --use-sage-attention > /workspace/logs/comfywan.log 2>&1 &
+  # python main.py --use-sage-attention --listen 
   # make sure to use full path. otherwise the base will change to /runpod-volume
   python -u /workspace/comfywan/main.py --port 3000 --use-sage-attention --base-directory /workspace/comfywan --disable-auto-launch --disable-metadata --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
   # deactivate
