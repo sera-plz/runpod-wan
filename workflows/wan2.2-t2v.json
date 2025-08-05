@@ -1,7 +1,7 @@
 {
   "6": {
     "inputs": {
-      "text": "a beautiful Mongolian woman sitting in a cafe drinking her morning coffee",
+      "text": "Interior shot of a brightly colored, cartoonish bedroom. The camera is positioned low, just behind MARIO’s shoulder as he pushes the door open. A slow, steady tracking shot follows him as he walks into the room. The camera then pans left to reveal PRINCESS PEACH sitting up in a large, ornate bed, looking surprised. Next to her, DONALD TRUMP, in his signature suit, gives a thumbs-up to the camera. Mario freezes, his expression of shock captured in a dramatic crash zoom. The scene has a hyper-saturated, 8-bit video game aesthetic, with harsh, flat lighting",
       "clip": [
         "38",
         0
@@ -90,7 +90,7 @@
   "57": {
     "inputs": {
       "add_noise": "enable",
-      "noise_seed": 745212430524176,
+      "noise_seed": 252587052216074,
       "steps": 4,
       "cfg": 1,
       "sampler_name": "euler",
@@ -175,7 +175,7 @@
     "inputs": {
       "frame_rate": 16,
       "loop_count": 0,
-      "filename_prefix": "2025-08-01/wan22_",
+      "filename_prefix": "video/wan22_t2v_",
       "format": "video/h264-mp4",
       "pix_fmt": "yuv420p",
       "crf": 19,
@@ -252,7 +252,7 @@
       },
       "lora_1": {
         "on": true,
-        "lora": "lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank32_bf16.safetensors",
+        "lora": "Wan2.2-Lightning_T2V-A14B-4steps-lora_HIGH_fp16.safetensors",
         "strength": 1
       },
       "lora_2": {
@@ -293,8 +293,8 @@
       },
       "lora_1": {
         "on": true,
-        "lora": "lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank32_bf16.safetensors",
-        "strength": 2
+        "lora": "Wan2.2-Lightning_T2V-A14B-4steps-lora_LOW_fp16.safetensors",
+        "strength": 1
       },
       "lora_2": {
         "on": false,
@@ -304,7 +304,7 @@
       "lora_3": {
         "on": false,
         "lora": "super_saiyan_35_epochs.safetensors",
-        "strength": 13.700000000000008
+        "strength": 1
       },
       "lora_4": {
         "on": false,

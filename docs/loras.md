@@ -6,11 +6,13 @@ token=YOUR_TOKEN
 ```
 LORAs:
 ```bash
-# lightx2v self-forcing
-aria2c -x16 -s16 -d /workspace/models/loras -o lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank32_bf16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank32_bf16.safetensors
-
 # lightx2v i2v self-forcing
 aria2c -x16 -s16 -d /workspace/models/loras -o lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
+
+# WAN22 lightx2v high
+aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_T2V-A14B-4steps-lora_HIGH_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_T2V-A14B-4steps-lora_HIGH_fp16.safetensors
+# WAN22 lightx2v low
+aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_T2V-A14B-4steps-lora_LOW_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_T2V-A14B-4steps-lora_LOW_fp16.safetensors
 
 # phut hon dance
 aria2c -x16 -s16 -d /workspace/models/loras -o dbc.safetensors --continue=true "https://civitai.com/api/download/models/1542806?type=Model&format=SafeTensor&token=${token}"
