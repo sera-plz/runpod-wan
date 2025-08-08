@@ -55,3 +55,9 @@
    }
 }
 ```
+
+# For runpod s3 access:
+```
+aws s3 ls --region EU-SE-1 --endpoint-url https://s3api-eur-se-1.runpod.io/ s3://sbo371gmlh/
+
+```
