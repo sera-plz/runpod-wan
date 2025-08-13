@@ -6,13 +6,15 @@ token=YOUR_TOKEN
 ```
 LORAs:
 ```bash
-# lightx2v i2v self-forcing
-aria2c -x16 -s16 -d /workspace/models/loras -o lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors
+# WAN22 lightx2v high for I2V
+aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_I2V-A14B-4steps-lora_HIGH_fp16.safetensors
+# WAN22 lightx2v low for I2V
+aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors
 
-# WAN22 lightx2v high
-aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_T2V-A14B-4steps-lora_HIGH_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_T2V-A14B-4steps-lora_HIGH_fp16.safetensors
-# WAN22 lightx2v low
-aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_T2V-A14B-4steps-lora_LOW_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_T2V-A14B-4steps-lora_LOW_fp16.safetensors
+# WAN22 lightx2v high for T2V
+aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_T2V-v1.1-A14B-4steps-lora_HIGH_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_T2V-v1.1-A14B-4steps-lora_HIGH_fp16.safetensors
+# WAN22 lightx2v low for T2V
+aria2c -x16 -s16 -d /workspace/models/loras -o Wan2.2-Lightning_T2V-v1.1-A14B-4steps-lora_LOW_fp16.safetensors --continue=true https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/Wan22-Lightning/Wan2.2-Lightning_T2V-v1.1-A14B-4steps-lora_LOW_fp16.safetensors
 
 # phut hon dance
 aria2c -x16 -s16 -d /workspace/models/loras -o dbc.safetensors --continue=true "https://civitai.com/api/download/models/1542806?type=Model&format=SafeTensor&token=${token}"
@@ -38,5 +40,15 @@ aria2c -x16 -s16 -d /workspace/models/loras -o Hulk_epoch35.safetensors --contin
 # The video shows a man looking forward. Slowly, the h01k green hulk transformation begins. His muscles start to swell, veins bulge beneath his skin, and his face tightens with strain. His skin gradually shifts to green as his body continues to grow. His clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring.
 # The video shows an Asian man looking forward. Slowly, the h01k green hulk transformation begins. His muscles start to swell, veins bulge beneath his skin, and his face tightens with strain. His skin gradually shifts to green as his body continues to grow. His clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring.
 # The video shows an elderly man looking forward. Slowly, the h01k green hulk transformation begins. His muscles start to swell, veins bulge beneath his skin, and his face tightens with strain. His skin gradually shifts to green as his body continues to grow. His clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring
+
+# WAN missionary
+aria2c -x16 -s16 -d /workspace/models/loras -o wan2.2_i2v_highnoise_pov_missionary_v1.0.safetensors --continue=true "https://civitai.com/api/download/models/2098405?type=Model&format=SafeTensor&token=${token}"
+aria2c -x16 -s16 -d /workspace/models/loras -o wan2.2_i2v_lownoise_pov_missionary_v1.0.safetensors --continue=true "https://civitai.com/api/download/models/2098396?type=Model&format=SafeTensor&token=${token}"
+# Important parts of the prompt:
+# with her legs spread having sex with a man
+# ...
+# A man is thrusting his penis back and forth inside her vagina at the bottom of the screen
+# {Movement is fast with bouncing breasts|Movement is slow}
+# Her breasts are {small|medium sized|large}
 
 ```
