@@ -54,6 +54,7 @@ pip install -r requirements.txt
 pip install requests runpod==1.7.9 websocket-client
 pip install onnxruntime-gpu
 pip install triton
+pip install mutagen
 
 # Install SageAttention after ensuring the correct torch version
 # wget -O https://github.com/atumn/runpod-wan/raw/refs/heads/main/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
