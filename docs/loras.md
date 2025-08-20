@@ -21,23 +21,14 @@ aria2c -x16 -s16 -d /workspace/models/loras -o dbc.safetensors --continue=true "
 # trigger words: 
 # dabaichui
 # making dabaichui motion
-# example:  dabaichui，someone holds someone's head with both hands and twists someone's waist and hips left and right ，making dabaichui motion
-
-# super saiyan:
-aria2c -x16 -s16 -d /workspace/models/loras -o super_saiyan_35_epochs.safetensors --continue=true "https://civitai.com/api/download/models/1554033?type=Model&format=SafeTensor&token=${token}"
-# trigger words:
-# 5up3r super saiyan transformation
-# examples:
-# A South Asian man with dark hair and a beard clenches his fists, staring forward. His hair brightens to glowing yellow, spiking up as gold energy surges around his body. The background pulses with yellow light, and sparks crackle in the air during his 5up3r super saiyan transformation, real life style.
-# A man with curly dark hair and a beard clenches his fists, staring forward. His hair brightens to glowing yellow, spiking up as gold energy surges around his body. The background pulses with yellow light, and sparks crackle in the air during his 5up3r super saiyan transformation, real life style.
-# Pepe the Frog clenches his fists, staring forward. Pepe the frog's hair brightens to glowing yellow, spiking up as gold energy surges around Pepe the frog's body. The background pulses with yellow light, and sparks crackle in the air during his 5up3r super saiyan transformation, real life style.
+# example:  dabaichui，the person holds their head with both hands and twists their waist and hips left and right ，making dabaichui motion
 
 # Hulk transformation:
 aria2c -x16 -s16 -d /workspace/models/loras -o Hulk_epoch35.safetensors --continue=true "https://civitai.com/api/download/models/1588339?type=Model&format=SafeTensor&token=${token}"
 # trigger words: 
 # h01k green hulk transformation
 # examples:
-# The video shows a man looking forward. Slowly, the h01k green hulk transformation begins. His muscles start to swell, veins bulge beneath his skin, and his face tightens with strain. His skin gradually shifts to green as his body continues to grow. His clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring.
+# The video shows a person looking forward. Slowly, the h01k green hulk transformation begins. Their muscles start to swell, veins bulge beneath their skin, and their face tightens with strain. Their skin gradually shifts to green as their body continues to grow. Their clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring.
 # The video shows an Asian man looking forward. Slowly, the h01k green hulk transformation begins. His muscles start to swell, veins bulge beneath his skin, and his face tightens with strain. His skin gradually shifts to green as his body continues to grow. His clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring.
 # The video shows an elderly man looking forward. Slowly, the h01k green hulk transformation begins. His muscles start to swell, veins bulge beneath his skin, and his face tightens with strain. His skin gradually shifts to green as his body continues to grow. His clothes begin to tear apart under the pressure. The transformation completes as the Hulk emerges, standing tall and roaring
 
