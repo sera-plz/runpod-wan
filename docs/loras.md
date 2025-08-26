@@ -42,4 +42,9 @@ aria2c -x16 -s16 -d /workspace/models/loras -o wan2.2_i2v_lownoise_pov_missionar
 # {Movement is fast with bouncing breasts|Movement is slow}
 # Her breasts are {small|medium sized|large}
 
+# WAN 2.2 sigma face
+aria2c -x16 -s16 -d /workspace/models/loras -o wan2_2_14b_i2v_sigma_000002100_high_noise.safetensors --continue=true "https://civitai.com/api/download/models/2147746?type=Model&format=SafeTensor&token=${token}"
+# trigger words:
+# ... doing sigma face expression
+
 ```
