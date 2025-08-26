@@ -18,7 +18,7 @@ from mutagen.mp4 import MP4
 # Time to wait between API check attempts in milliseconds
 COMFY_API_AVAILABLE_INTERVAL_MS = 1000
 # Maximum number of API check attempts
-COMFY_API_AVAILABLE_MAX_RETRIES = 600
+COMFY_API_AVAILABLE_MAX_RETRIES = 900
 
 # Enhanced WebSocket configuration for long-running jobs
 WEBSOCKET_RECONNECT_ATTEMPTS = int(os.environ.get("WEBSOCKET_RECONNECT_ATTEMPTS", 100))
