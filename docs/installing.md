@@ -1,94 +1,88 @@
-# Install ComfyUI on your Network Volume
+# Install ComfyUI with Models Encapsulated in Docker Image
+
+This setup encapsulates all models and dependencies within the Docker image, eliminating the need for network volumes.
 
 1. [Create a RunPod Account](https://runpod.io).
-2. Create a [RunPod Network Volume](https://www.runpod.io/console/user/storage).
-3. Attach the Network Volume to a Secure Cloud [GPU pod](https://www.runpod.io/console/gpu-secure-cloud).
-4. Select the RunPod Pytorch 2 template.
+2. Create a Secure Cloud [GPU pod](https://www.runpod.io/console/gpu-secure-cloud).
+3. Select a GPU instance with sufficient VRAM (recommended: A100 or similar with 40GB+ VRAM).
+4. Use the custom Docker image built from this repository.
 5. Deploy the GPU Cloud pod.
-6. Once the pod is up, open a Terminal and install the required dependencies.
+6. The container will start automatically with all models and ComfyUI pre-installed.
 
-## Installation
+## Building the Docker Image
 
-1. Install the ComfyUI:
+The Docker image is automatically built using GitHub Actions and published to GitHub Container Registry. The build process includes downloading all models and dependencies.
+
+### Automatic Build Process
+
+- **Trigger**: Builds automatically on pushes to `main`/`master` branches and pull requests
+- **Registry**: Published to `ghcr.io/your-username/runpod-wan`
+- **Tags**: Includes branch names, commit SHAs, and `latest` for the default branch
+
+### Manual Build (if needed)
+
+If you need to build locally:
+
+1. Clone this repository:
 ```bash
-# Clone the repo
-cd /workspace
-git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git comfywan
-
-# Upgrade Python
-apt update
-apt -y upgrade
-apt-get install aria2 # for downloading models
-
-# Ensure Python version is 3.10.12
-python -V
-
-# Create and activate venv
-cd comfywan
-python -m venv /workspace/venv
-source /workspace/venv/bin/activate
-
-# Install Torch 
-pip install --no-cache-dir torch==2.7.0+cu128 --index-url https://download.pytorch.org/whl/cu128 --no-deps
-pip install --no-cache-dir torchvision==0.22.0+cu128 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
-
-# Install ComfyUI
-pip install -r requirements.txt
-
-# Installing ComfyUI Manager
-git clone https://github.com/ltdrdata/ComfyUI-Manager.git custom_nodes/ComfyUI-Manager
-cd custom_nodes/ComfyUI-Manager
-pip install -r requirements.txt
-
-# Installing KJNodes
-git clone https://github.com/kijai/ComfyUI-KJNodes.git custom_nodes/ComfyUI-KJNodes
-cd custom_nodes/ComfyUI-KJNodes
-pip install -r requirements.txt
-
-git clone https://github.com/welltop-cn/ComfyUI-TeaCache.git custom_nodes/ComfyUI-TeaCache
-cd custom_nodes/ComfyUI-TeaCache
-pip install -r requirements.txt
-```
-2. Install the Serverless dependencies:
-```bash
-pip install requests runpod==1.7.9 websocket-client
-pip install onnxruntime-gpu
-pip install triton
-pip install mutagen
-
-# Install SageAttention after ensuring the correct torch version
-# wget -O https://github.com/atumn/runpod-wan/raw/refs/heads/main/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
-# RUN pip install /tmp/sageattention-2.1.1-cp310-cp310-linux_x86_64.whl
-git clone https://github.com/thu-ml/SageAttention.git
-cd SageAttention 
-python setup.py install  # or pip install -e .
-
-```
-3. Download models:
-```bash
-# WAN2.2 I2V Q5_M
-aria2c -x16 -s16 -d /workspace/models/diffusion_models -o wan2.2_i2v_high_noise_14B_Q5_K_M.gguf --continue=true https://huggingface.co/bullerwins/Wan2.2-I2V-A14B-GGUF/resolve/main/wan2.2_i2v_high_noise_14B_Q5_K_M.gguf
-aria2c -x16 -s16 -d /workspace/models/diffusion_models -o wan2.2_i2v_low_noise_14B_Q5_K_M.gguf --continue=true https://huggingface.co/bullerwins/Wan2.2-I2V-A14B-GGUF/resolve/main/wan2.2_i2v_low_noise_14B_Q5_K_M.gguf
-
-# WAN2.2 T2V Q5_M
-aria2c -x16 -s16 -d /workspace/models/diffusion_models -o wan2.2_t2v_high_noise_14B_Q5_K_M.gguf --continue=true https://huggingface.co/bullerwins/Wan2.2-T2V-A14B-GGUF/resolve/main/wan2.2_t2v_high_noise_14B_Q5_K_M.gguf
-aria2c -x16 -s16 -d /workspace/models/diffusion_models -o wan2.2_t2v_low_noise_14B_Q5_K_M.gguf --continue=true https://huggingface.co/bullerwins/Wan2.2-T2V-A14B-GGUF/resolve/main/wan2.2_t2v_low_noise_14B_Q5_K_M.gguf
-
-# Download text encoders also GGUF
-aria2c -x16 -s16 -d /workspace/models/text_encoders -o umt5-xxl-encoder-Q8_0.gguf --continue=true https://huggingface.co/city96/umt5-xxl-encoder-gguf/resolve/main/umt5-xxl-encoder-Q8_0.gguf
-
-aria2c -x16 -s16 -d /workspace/models/text_encoders -o umt5_xxl_fp8_e4m3fn_scaled.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
-
-# Create CLIP vision directory and download models
-aria2c -x16 -s16 -d /workspace/models/clip_vision -o clip_vision_h.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files/clip_vision/clip_vision_h.safetensors
-
-# Download VAE
-aria2c -x16 -s16 -d /workspace/models/vae -o wan_2.1_vae_.safetensors --continue=true https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
-
-# see loras.md for LORAs
+git clone https://github.com/your-repo/runpod-wan.git
+cd runpod-wan
 ```
 
-6. Create logs directory:
+2. Build the Docker image:
 ```bash
-mkdir -p /workspace/logs
+docker build -t runpod-wan-comfyui .
 ```
+
+3. Run the container (for testing):
+```bash
+docker run --gpus all -p 3000:3000 runpod-wan-comfyui
+```
+
+### Using Pre-built Images
+
+Pull the latest image from GitHub Container Registry:
+```bash
+docker pull ghcr.io/your-username/runpod-wan:latest
+```
+
+## RunPod Deployment
+
+1. In your RunPod account, create a new Secure Cloud GPU pod
+2. Select a GPU instance with sufficient VRAM (recommended: A100 or similar with 40GB+ VRAM)
+3. In the "Container" section, enter:
+   - **Container Image**: `ghcr.io/your-username/runpod-wan:latest`
+   - **Container Disk**: At least 50GB (models take significant space)
+4. Configure any environment variables if needed (optional)
+5. Deploy the pod
+
+The container will automatically start ComfyUI with all models loaded and ready to use. No additional setup is required.
+
+## Pre-installed Components
+
+The Docker image includes:
+
+- **ComfyUI** with all required dependencies
+- **WAN2.2 Models** (I2V and T2V variants in Q5_K_M GGUF format)
+- **Text Encoders** (UMT5-XXL in both GGUF Q8_0 and FP8 formats)
+- **CLIP Vision Model** for image processing
+- **VAE Model** for latent space operations
+- **Custom Nodes**:
+  - ComfyUI-Manager
+  - KJNodes
+  - TeaCache
+- **SageAttention** for optimized attention mechanisms
+- **Serverless dependencies** (RunPod, ONNX Runtime, Triton, etc.)
+
+## Model Storage
+
+All models are stored in the following directories within the container:
+- `/comfywan/models/diffusion_models/` - WAN2.2 diffusion models
+- `/comfywan/models/text_encoders/` - Text encoding models
+- `/comfywan/models/clip_vision/` - CLIP vision models
+- `/comfywan/models/vae/` - VAE models
+- `/comfywan/logs/` - Application logs
+
+## Usage
+
+Once deployed on RunPod, the container will automatically start ComfyUI on port 3000 and the RunPod handler. No additional setup is required.
